@@ -1,0 +1,52 @@
+{
+  "name": "conecta-whatsapp-crm-mvp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Plataforma Inteligente de Relacionamento e Acolhimento via WhatsApp com IA",
+  "main": "dist/presentation/server.js",
+  "scripts": {
+    "dev": "tsx watch src/presentation/server.ts",
+    "build:server": "tsc -p tsconfig.json",
+    "build:client": "cd src/client && npm install && npm run build",
+    "build": "npm run build:server && npm run build:client",
+    "start": "node dist/presentation/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio",
+    "seed": "tsx src/infrastructure/database/seed.ts"
+  },
+  "keywords": [
+    "whatsapp",
+    "crm",
+    "ai",
+    "meta-cloud-api",
+    "attendance",
+    "gemini"
+  ],
+  "author": "Antigravity Engineering",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^6.4.1",
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.13.5",
+    "@types/uuid": "^10.0.0",
+    "prisma": "^6.4.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}
