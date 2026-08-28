@@ -38,6 +38,44 @@ export class ProcessInboundMessageUseCase {
     const normalizedResult = PhoneNumber.normalize(dto.fromPhone);
     const normalizedPhone = normalizedResult.normalizedPhone || dto.fromPhone;
 
+    // 0. Verificação de Idempotência (Meta Webhook Redelivery / Retries)
+    if (dto.providerMessageId) {
+      const existingMessage = await prisma.message.findUnique({
+        where: { providerMessageId: dto.providerMessageId },
+        include: {
+          person: true,
+          aiAnalyses: {
+            take: 1,
+            orderBy: { createdAt: 'desc' }
+          }
+        }
+      });
+
+      if (existingMessage) {
+        const latestAnalysis = existingMessage.aiAnalyses[0];
+        return {
+          messageId: existingMessage.id,
+          personId: existingMessage.personId,
+          personName: existingMessage.person.name,
+          conversationId: existingMessage.conversationId,
+          isOptOut: existingMessage.person.optOut,
+          classification: latestAnalysis ? {
+            category: latestAnalysis.category,
+            intent: latestAnalysis.intent,
+            confidence: latestAnalysis.confidence,
+            sentiment: latestAnalysis.sentiment,
+            urgency: latestAnalysis.urgency,
+            priority: latestAnalysis.priority,
+            summary: latestAnalysis.summary,
+            requiresHumanAttention: latestAnalysis.requiresHumanAttention,
+            suggestedReply: latestAnalysis.suggestedReply || undefined,
+            nextAction: latestAnalysis.nextAction,
+            providerUsed: latestAnalysis.modelUsed
+          } : undefined
+        };
+      }
+    }
+
     // 1. Localiza ou cria a Pessoa
     let person = await prisma.person.findUnique({
       where: { normalizedPhone }
@@ -73,18 +111,39 @@ export class ProcessInboundMessageUseCase {
     }
 
     // 3. Salva a mensagem recebida no banco
-    const inboundMessage = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        personId: person.id,
-        direction: 'INBOUND',
-        providerMessageId: dto.providerMessageId || null,
-        content: dto.text,
-        status: 'READ',
-        deliveredAt: new Date(),
-        readAt: new Date()
+    let inboundMessage;
+    try {
+      inboundMessage = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          personId: person.id,
+          direction: 'INBOUND',
+          providerMessageId: dto.providerMessageId || null,
+          content: dto.text,
+          status: 'READ',
+          deliveredAt: new Date(),
+          readAt: new Date()
+        }
+      });
+    } catch (err: any) {
+      // Se ocorrer colisão de chave única em caso de race condition no webhook retry
+      if (err?.code === 'P2002' && dto.providerMessageId) {
+        const retryFound = await prisma.message.findUnique({
+          where: { providerMessageId: dto.providerMessageId },
+          include: { person: true }
+        });
+        if (retryFound) {
+          return {
+            messageId: retryFound.id,
+            personId: retryFound.personId,
+            personName: retryFound.person.name,
+            conversationId: retryFound.conversationId,
+            isOptOut: retryFound.person.optOut
+          };
+        }
       }
-    });
+      throw err;
+    }
 
     // 4. Verificação de Opt-Out Imediato (LGPD / Meta Compliance)
     const optOutRegex = /^(stop|sair|parar|cancelar|descadastrar|remover|n(a|ã)o\s*quero\s*mais|n(a|ã)o\s*mandem\s*mais)$/i;

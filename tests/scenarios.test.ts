@@ -7,6 +7,7 @@ import { ProcessInboundMessageUseCase } from '../src/application/use-cases/proce
 import { MockWhatsAppProvider } from '../src/infrastructure/whatsapp/mock-whatsapp.provider.js';
 import { CompositeAIService } from '../src/infrastructure/ai/composite-ai.service.js';
 import { RuleBasedFallbackProvider } from '../src/infrastructure/ai/rule-based-fallback.provider.js';
+import { ConversationsController } from '../src/presentation/controllers/conversations.controller.js';
 
 describe('Suíte Completa de Validação de Domínio, IA e Cenários E2E (A a H + Regressão Canônica)', () => {
   let mockWhatsApp: MockWhatsAppProvider;
@@ -248,4 +249,140 @@ describe('Suíte Completa de Validação de Domínio, IA e Cenários E2E (A a H 
     expect(analysis.providerUsed).toBe('RULE_BASED_FALLBACK');
     expect(analysis.priority).toBe('LOW');
   });
+
+  // =========================================================================
+  // CENÁRIO I: Webhook Idempotente (Retries da Meta)
+  // =========================================================================
+  it('Cenário I: Deve ser estritamente idempotente em caso de webhook duplicado da Meta', async () => {
+    const duplicateWamid = 'wamid.HBgLMjQ5OTA5ODc2NTQ1FQIAEhggMTIzNDU2Nzg5';
+    const testPhone = '11944445555';
+
+    // 1º envio do webhook
+    const firstResult = await inboundUseCase.execute({
+      fromPhone: testPhone,
+      text: 'Não consegui ir no culto porque estava de plantão no hospital.',
+      providerMessageId: duplicateWamid
+    });
+
+    expect(firstResult.messageId).toBeDefined();
+
+    const totalMessagesBefore = await prisma.message.count({
+      where: { providerMessageId: duplicateWamid }
+    });
+    expect(totalMessagesBefore).toBe(1);
+
+    const totalAnalysesBefore = await prisma.aIAnalysis.count({
+      where: { messageId: firstResult.messageId }
+    });
+    expect(totalAnalysesBefore).toBe(1);
+
+    // 2º envio do webhook com o MESMO providerMessageId (simulando retry da Meta)
+    const secondResult = await inboundUseCase.execute({
+      fromPhone: testPhone,
+      text: 'Não consegui ir no culto porque estava de plantão no hospital.',
+      providerMessageId: duplicateWamid
+    });
+
+    // Deve retornar o mesmo ID sem lançar erro de colisão (P2002)
+    expect(secondResult.messageId).toBe(firstResult.messageId);
+
+    const totalMessagesAfter = await prisma.message.count({
+      where: { providerMessageId: duplicateWamid }
+    });
+    expect(totalMessagesAfter).toBe(1); // Nenhuma mensagem duplicada
+
+    const totalAnalysesAfter = await prisma.aIAnalysis.count({
+      where: { messageId: firstResult.messageId }
+    });
+    expect(totalAnalysesAfter).toBe(1); // Nenhuma análise duplicada
+  });
+
+  // =========================================================================
+  // CENÁRIO J: Janela de Atendimento de 24 Horas da Meta
+  // =========================================================================
+  it('Cenário J: Deve validar a janela de 24 horas para mensagens de texto livre', async () => {
+    const conversationsController = new ConversationsController(mockWhatsApp);
+
+    // 1. Cria uma conversa sem nenhuma mensagem inbound (janela fechada)
+    const person = await prisma.person.create({
+      data: {
+        name: 'Contato Sem Inbound',
+        phone: '11977778888',
+        normalizedPhone: '+5511977778888',
+        optOut: false
+      }
+    });
+
+    const closedConv = await prisma.conversation.create({
+      data: {
+        personId: person.id,
+        status: 'OPEN'
+      }
+    });
+
+    // Mock de Response do Express
+    let statusCode = 0;
+    let responseBody: any = null;
+    const mockRes: any = {
+      status: (code: number) => {
+        statusCode = code;
+        return mockRes;
+      },
+      json: (data: any) => {
+        responseBody = data;
+        return mockRes;
+      }
+    };
+
+    // Tentativa 1: Envio sem mensagem inbound anterior -> Bloqueado 422
+    await conversationsController.reply(
+      { params: { id: closedConv.id }, body: { text: 'Olá, tudo bem?' } } as any,
+      mockRes
+    );
+
+    expect(statusCode).toBe(422);
+    expect(responseBody.error).toBe('JANELA_24H_EXPIRADA');
+
+    // 2. Simula mensagem inbound recebida há 30 horas atrás (janela expirada)
+    const expiredInbound = await prisma.message.create({
+      data: {
+        conversationId: closedConv.id,
+        personId: person.id,
+        direction: 'INBOUND',
+        content: 'Mensagem antiga',
+        status: 'READ',
+        createdAt: new Date(Date.now() - 30 * 60 * 60 * 1000) // 30h atrás
+      }
+    });
+
+    await conversationsController.reply(
+      { params: { id: closedConv.id }, body: { text: 'Respondendo 30h depois' } } as any,
+      mockRes
+    );
+
+    expect(statusCode).toBe(422);
+    expect(responseBody.error).toBe('JANELA_24H_EXPIRADA');
+
+    // 3. Simula mensagem inbound recebida há 2 horas atrás (janela aberta)
+    await prisma.message.create({
+      data: {
+        conversationId: closedConv.id,
+        personId: person.id,
+        direction: 'INBOUND',
+        content: 'Oi, boa tarde!',
+        status: 'READ',
+        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2h atrás
+      }
+    });
+
+    await conversationsController.reply(
+      { params: { id: closedConv.id }, body: { text: 'Olá! Como posso te ajudar?' } } as any,
+      mockRes
+    );
+
+    expect(statusCode).toBe(201);
+    expect(responseBody.message).toBeDefined();
+    expect(responseBody.message.content).toBe('Olá! Como posso te ajudar?');
+  });
 });
+
