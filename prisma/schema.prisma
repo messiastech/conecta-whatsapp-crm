@@ -20,23 +20,43 @@ model User {
 }
 
 model Person {
-  id              String         @id @default(uuid())
+  id              String           @id @default(uuid())
   name            String
   phone           String
-  normalizedPhone String         @unique // Formato E.164: +5511999999999
+  normalizedPhone String           @unique // Formato E.164: +5511999999999
   email           String?
   notes           String?
-  optOut          Boolean        @default(false)
+  optOut          Boolean          @default(false)
   optOutAt        DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  optOutReason    String?
+  consentStatus   String           @default("OPTED_IN") // OPTED_IN, OPTED_OUT
+  consentSource   String           @default("IMPORT")   // IMPORT, WEBHOOK_STOP, MANUAL, FORM
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   attendances     Attendance[]
   conversations   Conversation[]
   messages        Message[]
+  followUpTasks   FollowUpTask[]
+  consentHistory  ConsentHistory[]
 
   @@index([normalizedPhone])
   @@index([optOut])
+  @@index([consentStatus])
+}
+
+model ConsentHistory {
+  id        String   @id @default(uuid())
+  personId  String
+  status    String   // OPTED_IN, OPTED_OUT
+  reason    String?
+  source    String   // WEBHOOK_KEYWORD, MANUAL_CHANGE, FORM_OPTIN
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId])
 }
 
 model Event {
@@ -60,7 +80,9 @@ model Attendance {
   personId    String
   eventId     String
   invited     Boolean   @default(true)
+  confirmed   Boolean   @default(false)
   attended    Boolean   @default(false)
+  status      String    @default("INVITED") // INVITED, CONFIRMED, ATTENDED, ABSENT, UNREGISTERED_ATTENDEE
   checkInTime DateTime?
   source      String    @default("CSV_IMPORT")
   notes       String?
@@ -72,6 +94,7 @@ model Attendance {
 
   @@unique([personId, eventId])
   @@index([eventId, attended])
+  @@index([eventId, status])
 }
 
 model Campaign {
@@ -94,21 +117,25 @@ model Campaign {
 }
 
 model Conversation {
-  id                     String       @id @default(uuid())
+  id                     String         @id @default(uuid())
   personId               String
-  lastMessageAt          DateTime     @default(now())
-  status                 String       @default("OPEN") // OPEN, WAITING_REPLY, REPLIED, CLOSED
-  requiresHumanAttention Boolean      @default(false)
+  lastMessageAt          DateTime       @default(now())
+  status                 String         @default("OPEN") // OPEN, WAITING_REPLY, REPLIED, CLOSED
+  priority               String         @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  requiresHumanAttention Boolean        @default(false)
   category               String?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
+  assignedTo             String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
-  person                 Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  person                 Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
   messages               Message[]
   aiAnalyses             AIAnalysis[]
+  followUpTasks          FollowUpTask[]
 
   @@index([personId])
   @@index([requiresHumanAttention])
+  @@index([priority])
 }
 
 model Message {
@@ -140,12 +167,17 @@ model AIAnalysis {
   id                     String       @id @default(uuid())
   messageId              String
   conversationId         String
-  category               String
+  category               String       // TRABALHO, SAUDE, FAMILIA, VIAGEM, etc.
+  reason                 String?
+  intent                 String       @default("JUSTIFY_ABSENCE") // JUSTIFY_ABSENCE, PRAYER_REQUEST, QUESTION, OPT_OUT, OTHER
   confidence             Float
-  sentiment              String
+  sentiment              String       // POSITIVO, NEUTRO, NEGATIVO, PREOCUPADO
+  urgency                String       @default("MEDIA")           // BAIXA, MEDIA, ALTA
+  priority               String       @default("MEDIUM")          // LOW, MEDIUM, HIGH, URGENT
   summary                String
   requiresHumanAttention Boolean      @default(false)
   suggestedReply         String?
+  nextAction             String       @default("REQUIRE_HUMAN_APPROVAL") // REPLY_IMMEDIATELY, REQUIRE_HUMAN_APPROVAL, PASTORAL_CONTACT, FOLLOW_UP_TASK, NO_ACTION, REQUEST_CLARIFICATION
   rawResponse            String       @default("{}")
   modelUsed              String
   createdAt              DateTime     @default(now())
@@ -156,6 +188,29 @@ model AIAnalysis {
   @@index([messageId])
   @@index([conversationId])
   @@index([category])
+  @@index([priority])
+}
+
+model FollowUpTask {
+  id             String       @id @default(uuid())
+  personId       String
+  conversationId String?
+  title          String
+  description    String?
+  priority       String       @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status         String       @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  assignedTo     String?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([personId])
+  @@index([status])
+  @@index([priority])
 }
 
 model AuditLog {

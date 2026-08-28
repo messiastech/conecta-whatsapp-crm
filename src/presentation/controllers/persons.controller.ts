@@ -4,7 +4,7 @@ import { prisma } from '../../infrastructure/database/prisma.client.js';
 export class PersonsController {
   async list(req: Request, res: Response): Promise<void> {
     try {
-      const { search, optOut } = req.query;
+      const { search, optOut, consentStatus } = req.query;
 
       const where: any = {};
       if (search && typeof search === 'string') {
@@ -19,6 +19,10 @@ export class PersonsController {
         where.optOut = optOut === 'true';
       }
 
+      if (consentStatus && typeof consentStatus === 'string') {
+        where.consentStatus = consentStatus;
+      }
+
       const persons = await prisma.person.findMany({
         where,
         include: {
@@ -28,7 +32,16 @@ export class PersonsController {
           },
           conversations: {
             take: 1,
-            orderBy: { lastMessageAt: 'desc' }
+            orderBy: { lastMessageAt: 'desc' },
+            include: {
+              aiAnalyses: {
+                take: 1,
+                orderBy: { createdAt: 'desc' }
+              }
+            }
+          },
+          followUpTasks: {
+            where: { status: 'PENDING' }
           }
         },
         orderBy: { createdAt: 'desc' }
@@ -54,7 +67,17 @@ export class PersonsController {
             orderBy: { createdAt: 'asc' },
             include: { aiAnalyses: true }
           },
-          conversations: true
+          conversations: {
+            include: {
+              aiAnalyses: { orderBy: { createdAt: 'desc' } }
+            }
+          },
+          followUpTasks: {
+            orderBy: { createdAt: 'desc' }
+          },
+          consentHistory: {
+            orderBy: { createdAt: 'desc' }
+          }
         }
       });
 
@@ -64,6 +87,132 @@ export class PersonsController {
       }
 
       res.json(person);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  async getTimeline(req: Request, res: Response): Promise<void> {
+    try {
+      const id = String(req.params.id);
+      const person = await prisma.person.findUnique({
+        where: { id },
+        include: {
+          attendances: { include: { event: true } },
+          messages: { include: { aiAnalyses: true, campaign: true } },
+          followUpTasks: true,
+          consentHistory: true
+        }
+      });
+
+      if (!person) {
+        res.status(404).json({ error: 'Contato não encontrado' });
+        return;
+      }
+
+      // Constrói timeline cronológica unificada
+      const timeline: Array<{
+        id: string;
+        date: Date;
+        type: 'ATTENDANCE' | 'OUTBOUND_MESSAGE' | 'INBOUND_MESSAGE' | 'AI_ANALYSIS' | 'FOLLOW_UP_TASK' | 'CONSENT_CHANGE';
+        title: string;
+        description: string;
+        badge?: string;
+        badgeColor?: string;
+        metadata?: any;
+      }> = [];
+
+      // 1. Presenças e Ausências em Eventos
+      person.attendances.forEach(att => {
+        timeline.push({
+          id: `att-${att.id}`,
+          date: att.createdAt,
+          type: 'ATTENDANCE',
+          title: `Evento: ${att.event?.name || 'Encontro'}`,
+          description: att.attended ? 'Presença confirmada no evento' : 'Ausência registrada (Público esperado/convidado)',
+          badge: att.attended ? 'PRESENTE' : 'AUSENTE',
+          badgeColor: att.attended ? 'emerald' : 'rose',
+          metadata: { eventId: att.eventId, attended: att.attended }
+        });
+      });
+
+      // 2. Mensagens e Análises de IA
+      person.messages.forEach(msg => {
+        const isOutbound = msg.direction === 'OUTBOUND';
+        timeline.push({
+          id: `msg-${msg.id}`,
+          date: msg.createdAt,
+          type: isOutbound ? 'OUTBOUND_MESSAGE' : 'INBOUND_MESSAGE',
+          title: isOutbound ? 'Campanha / Disparo WhatsApp' : 'Resposta do Participante',
+          description: `"${msg.content}"`,
+          badge: isOutbound ? 'ENVIADA' : 'RECEBIDA',
+          badgeColor: isOutbound ? 'blue' : 'emerald',
+          metadata: { messageId: msg.id, status: msg.status }
+        });
+
+        // Se a mensagem possui análise da IA
+        msg.aiAnalyses?.forEach(ai => {
+          timeline.push({
+            id: `ai-${ai.id}`,
+            date: ai.createdAt,
+            type: 'AI_ANALYSIS',
+            title: `Triagem Inteligente de IA: ${ai.category}`,
+            description: `Resumo: ${ai.summary}\nSentimento: ${ai.sentiment} | Prioridade: ${ai.priority}`,
+            badge: ai.category,
+            badgeColor: ai.requiresHumanAttention ? 'rose' : 'indigo',
+            metadata: {
+              confidence: ai.confidence,
+              requiresHumanAttention: ai.requiresHumanAttention,
+              suggestedReply: ai.suggestedReply,
+              nextAction: ai.nextAction
+            }
+          });
+        });
+      });
+
+      // 3. Tarefas de Acompanhamento (Follow-Up)
+      person.followUpTasks.forEach(task => {
+        timeline.push({
+          id: `task-${task.id}`,
+          date: task.createdAt,
+          type: 'FOLLOW_UP_TASK',
+          title: task.title,
+          description: task.description || 'Tarefa de acompanhamento gerada pela triagem',
+          badge: task.status === 'COMPLETED' ? 'CONCLUÍDO' : `PRIORIDADE ${task.priority}`,
+          badgeColor: task.status === 'COMPLETED' ? 'emerald' : 'amber',
+          metadata: { taskId: task.id, status: task.status, priority: task.priority }
+        });
+      });
+
+      // 4. Histórico de Consentimento LGPD
+      person.consentHistory.forEach(con => {
+        timeline.push({
+          id: `con-${con.id}`,
+          date: con.createdAt,
+          type: 'CONSENT_CHANGE',
+          title: con.status === 'OPTED_OUT' ? 'Descadastro LGPD (Opt-Out)' : 'Consentimento Registrado (Opt-In)',
+          description: con.reason || `Origem: ${con.source}`,
+          badge: con.status,
+          badgeColor: con.status === 'OPTED_OUT' ? 'rose' : 'emerald',
+          metadata: { status: con.status, source: con.source }
+        });
+      });
+
+      // Ordena por data decrescente
+      timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      res.json({
+        person: {
+          id: person.id,
+          name: person.name,
+          phone: person.phone,
+          normalizedPhone: person.normalizedPhone,
+          optOut: person.optOut,
+          consentStatus: person.consentStatus,
+          createdAt: person.createdAt
+        },
+        timeline
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -80,9 +229,21 @@ export class PersonsController {
           name,
           notes,
           optOut: optOut !== undefined ? optOut : undefined,
+          consentStatus: optOut === true ? 'OPTED_OUT' : (optOut === false ? 'OPTED_IN' : undefined),
           optOutAt: optOut === true ? new Date() : undefined
         }
       });
+
+      if (optOut !== undefined) {
+        await prisma.consentHistory.create({
+          data: {
+            personId: person.id,
+            status: optOut ? 'OPTED_OUT' : 'OPTED_IN',
+            reason: 'Alteração manual no cadastro do CRM',
+            source: 'MANUAL_CHANGE'
+          }
+        });
+      }
 
       res.json(person);
     } catch (err: any) {

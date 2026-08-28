@@ -23,9 +23,12 @@ DIRETRIZES:
 1. Classifique a categoria exclusivamente entre: TRABALHO, SAUDE, FAMILIA, VIAGEM, COMPROMISSO, ESQUECIMENTO, FALTA_INFORMACAO, TRANSPORTE_LOGISTICA, DESINTERESSE, PEDIDO_ATENDIMENTO, OUTRO, INCONCLUSIVO.
 2. Sentimento: POSITIVO, NEUTRO, NEGATIVO, PREOCUPADO.
 3. Urgência: BAIXA, MEDIA, ALTA.
-4. requires_human_attention: true se a mensagem envolver PEDIDO_ATENDIMENTO, SAUDE grave/internação, sentiment NEGATIVO/PREOCUPADO com crise ou se a confiança for baixa (< 0.60).
-5. Sugestão de resposta (suggested_reply): Acolhedora, mencionando o primeiro nome, em tom pastoral/respeitoso, sem cobrança, pronta para o WhatsApp.
-6. Retorne ESTRITAMENTE em formato JSON compatível com o schema.`;
+4. Prioridade Pastoral (priority): LOW, MEDIUM, HIGH, URGENT (Nota: Sentimento != Prioridade).
+5. Intenção (intent): JUSTIFY_ABSENCE, PRAYER_REQUEST, QUESTION, COMPLAINT, OPT_OUT, GREETING, OTHER.
+6. Próxima Ação (next_action): REPLY_IMMEDIATELY, REQUIRE_HUMAN_APPROVAL, PASTORAL_CONTACT, FOLLOW_UP_TASK, NO_ACTION, REQUEST_CLARIFICATION.
+7. requires_human_attention: true se a mensagem envolver PEDIDO_ATENDIMENTO, SAUDE grave/internação, sentiment NEGATIVO/PREOCUPADO com crise ou se a confiança for baixa (< 0.60).
+8. Sugestão de resposta (suggested_reply): Acolhedora, mencionando o primeiro nome, em tom pastoral/respeitoso, sem cobrança, pronta para o WhatsApp.
+9. Retorne ESTRITAMENTE em formato JSON compatível com o schema.`;
 
     const userPrompt = `Contexto:
 - Nome da pessoa: ${context.personName}
@@ -81,7 +84,7 @@ DIRETRIZES:
   ): Promise<{ suggestedReply: string; providerUsed: string }> {
     const analysis = await this.classifyAbsence(messageText, context);
     return {
-      suggestedReply: analysis.suggested_reply,
+      suggestedReply: analysis.suggested_reply || '',
       providerUsed: analysis.providerUsed
     };
   }

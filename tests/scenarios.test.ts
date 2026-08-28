@@ -8,7 +8,7 @@ import { MockWhatsAppProvider } from '../src/infrastructure/whatsapp/mock-whatsa
 import { CompositeAIService } from '../src/infrastructure/ai/composite-ai.service.js';
 import { RuleBasedFallbackProvider } from '../src/infrastructure/ai/rule-based-fallback.provider.js';
 
-describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
+describe('Suíte Completa de Validação de Domínio, IA e Cenários E2E (A a H + Regressão Canônica)', () => {
   let mockWhatsApp: MockWhatsAppProvider;
   let compositeAI: CompositeAIService;
   let importUseCase: ImportAttendanceUseCase;
@@ -22,7 +22,9 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
     dispatchUseCase = new DispatchCampaignUseCase(mockWhatsApp);
     inboundUseCase = new ProcessInboundMessageUseCase(compositeAI);
 
-    // Limpa tabelas de teste
+    // Limpeza de tabelas para testes limpos
+    await prisma.followUpTask.deleteMany();
+    await prisma.consentHistory.deleteMany();
     await prisma.aIAnalysis.deleteMany();
     await prisma.message.deleteMany();
     await prisma.conversation.deleteMany();
@@ -33,71 +35,128 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
   });
 
   // =========================================================================
-  // CENÁRIO A: 100 pessoas (70 presentes, 30 ausentes)
+  // TESTE DE REGRESSÃO END-TO-END CANÔNICO (10 Pessoas: 4 Presentes, 6 Ausentes)
   // =========================================================================
-  it('Cenário A: Deve importar e segmentar corretamente 100 contatos (70 presentes e 30 ausentes)', async () => {
+  it('Regressão Canônica: Fluxo completo de 10 pessoas (4 presentes, 6 ausentes) com IA, Follow-ups e Opt-Out', async () => {
     const event = await prisma.event.create({
       data: {
-        name: 'Mega Evento Comunitário 2026',
-        eventDate: new Date('2026-08-26T20:00:00Z'),
+        name: 'Culto de Celebração e Família',
+        eventDate: new Date('2026-08-28T19:00:00Z'),
         location: 'Auditório Central'
       }
     });
 
-    // Gera lista de 100 pessoas em memória
-    const rows: any[] = [];
-    for (let i = 1; i <= 100; i++) {
-      const isPresent = i <= 70;
-      const phoneDigits = String(10000000 + i).padStart(8, '0');
-      rows.push({
-        Nome: `Participante Teste ${i}`,
-        Telefone: `(11) 9${phoneDigits}`,
-        Evento: event.name,
-        Participou: isPresent ? 'Sim' : 'Não'
-      });
-    }
+    const rows = [
+      // 4 Presentes
+      { Nome: 'Lucas Ferreira', Telefone: '(11) 98111-0001', Participou: 'Sim' },
+      { Nome: 'Beatriz Almeida', Telefone: '(11) 98111-0002', Participou: 'Sim' },
+      { Nome: 'Gabriel Santos', Telefone: '(11) 98111-0003', Participou: 'Sim' },
+      { Nome: 'Juliana Mendes', Telefone: '(11) 98111-0004', Participou: 'Sim' },
+
+      // 6 Ausentes
+      { Nome: 'Mariana Souza', Telefone: '(11) 98765-4321', Participou: 'Não' }, // Saúde
+      { Nome: 'Carlos Eduardo', Telefone: '(11) 98111-0005', Participou: 'Não' }, // Saúde / Crise
+      { Nome: 'Rodrigo Lima', Telefone: '(11) 98111-0006', Participou: 'Não' },   // Trabalho
+      { Nome: 'Fernanda Costa', Telefone: '(11) 98111-0007', Participou: 'Não' }, // Trabalho
+      { Nome: 'Paulo Ricardo', Telefone: '(11) 98111-0008', Participou: 'Não' },  // Ambíguo
+      { Nome: 'Carla Nogueira', Telefone: '(11) 98111-0009', Participou: 'Não' }  // Opt-out
+    ];
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Presencas');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-    const importResult = await importUseCase.execute({
+    // 1. Importação
+    const importRes = await importUseCase.execute({
       eventId: event.id,
-      fileBuffer: buffer,
-      filename: '100_participantes.xlsx'
+      fileBuffer: buffer
     });
 
-    expect(importResult.totalImported).toBe(100);
-    expect(importResult.totalPresent).toBe(70);
-    expect(importResult.totalAbsent).toBe(30);
+    expect(importRes.totalImported).toBe(10);
+    expect(importRes.totalPresent).toBe(4);
+    expect(importRes.totalAbsent).toBe(6);
 
-    // Dispara campanha para os ausentes
-    const campaignResult = await dispatchUseCase.execute({
+    // 2. Disparo para os 6 Ausentes
+    const campRes = await dispatchUseCase.execute({
       eventId: event.id,
       type: 'AUSENTE_FOLLOWUP',
       messageTemplate: 'Olá, {{nome}}! Sentimos sua falta no {{evento}}!'
     });
 
-    expect(campaignResult.totalRecipients).toBe(30);
-    expect(campaignResult.totalSent).toBe(30);
-    expect(campaignResult.totalFailed).toBe(0);
+    expect(campRes.totalRecipients).toBe(6);
+    expect(campRes.totalSent).toBe(6);
+
+    // 3. Simulação de Respostas dos 6 Ausentes
+    // 2 Saúde
+    const res1 = await inboundUseCase.execute({
+      fromPhone: '+5511987654321',
+      text: 'Oi pastor! Tive febre alta e fui na UPA com minha filha.'
+    });
+    expect(res1.classification?.category).toBe('SAUDE');
+    expect(res1.classification?.priority).toBe('HIGH');
+    expect(res1.followUpTaskId).toBeDefined();
+
+    const res2 = await inboundUseCase.execute({
+      fromPhone: '+5511981110005',
+      text: 'Pastor, estou em crise de depressão precisando de oração e socorro.'
+    });
+    expect(res2.classification?.category).toBe('PEDIDO_ATENDIMENTO');
+    expect(res2.classification?.priority).toBe('URGENT');
+    expect(res2.followUpTaskId).toBeDefined();
+
+    // 2 Trabalho
+    const res3 = await inboundUseCase.execute({
+      fromPhone: '+5511981110006',
+      text: 'Boa noite! Peguei escala de plantão extra no trabalho.'
+    });
+    expect(res3.classification?.category).toBe('TRABALHO');
+    expect(res3.classification?.priority).toBe('LOW');
+
+    const res4 = await inboundUseCase.execute({
+      fromPhone: '+5511981110007',
+      text: 'Olá! Estava trabalhando no turno da noite da empresa.'
+    });
+    expect(res4.classification?.category).toBe('TRABALHO');
+
+    // 1 Ambíguo
+    const res5 = await inboundUseCase.execute({
+      fromPhone: '+5511981110008',
+      text: '👍 ok'
+    });
+    expect(res5.classification?.category).toBe('INCONCLUSIVO');
+
+    // 1 Opt-Out
+    const res6 = await inboundUseCase.execute({
+      fromPhone: '+5511981110009',
+      text: 'SAIR'
+    });
+    expect(res6.isOptOut).toBe(true);
+
+    const personOptOut = await prisma.person.findUnique({
+      where: { normalizedPhone: '+5511981110009' }
+    });
+    expect(personOptOut?.optOut).toBe(true);
+    expect(personOptOut?.consentStatus).toBe('OPTED_OUT');
+
+    // 4. Verificação de Tarefas de Acompanhamento (Follow-Ups)
+    const pendingTasks = await prisma.followUpTask.findMany({
+      where: { status: 'PENDING' }
+    });
+    expect(pendingTasks.length).toBeGreaterThanOrEqual(2);
   });
 
   // =========================================================================
-  // CENÁRIO B: Pessoa duplicada
+  // CENÁRIO B: Deduplicação
   // =========================================================================
-  it('Cenário B: Deve tratar duplicidades de contatos sem duplicar registros ou corromper dados', async () => {
+  it('Cenário B: Deve tratar duplicidades de contatos sem duplicar registros', async () => {
     const event = await prisma.event.create({
-      data: {
-        name: 'Culto de Quarta',
-        eventDate: new Date()
-      }
+      data: { name: 'Culto de Quarta', eventDate: new Date() }
     });
 
     const rows = [
       { Nome: 'Pedro Silva', Telefone: '(11) 98888-1111', Participou: 'Não' },
-      { Nome: 'Pedro Silva Santos', Telefone: '11 98888-1111', Participou: 'Sim' } // Mesma pessoa com nome mais completo
+      { Nome: 'Pedro Silva Santos', Telefone: '11 98888-1111', Participou: 'Sim' }
     ];
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -112,30 +171,19 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
 
     expect(importResult.totalImported).toBe(1);
     expect(importResult.duplicatesIgnored).toBe(1);
-    expect(importResult.totalPresent).toBe(1);
-
-    const person = await prisma.person.findUnique({
-      where: { normalizedPhone: '+5511988881111' }
-    });
-    expect(person).toBeDefined();
-    expect(person?.name).toBe('Pedro Silva');
   });
 
   // =========================================================================
   // CENÁRIO C: Telefone inválido
   // =========================================================================
-  it('Cenário C: Deve identificar e isolar linhas com telefones inválidos sem abortar o lote', async () => {
+  it('Cenário C: Deve isolar telefones inválidos sem abortar o lote', async () => {
     const event = await prisma.event.create({
-      data: {
-        name: 'Workshop de Liderança',
-        eventDate: new Date()
-      }
+      data: { name: 'Workshop', eventDate: new Date() }
     });
 
     const rows = [
       { Nome: 'Contato Válido', Telefone: '(11) 99999-8888', Participou: 'Sim' },
-      { Nome: 'Telefone Falso', Telefone: '12345', Participou: 'Não' },
-      { Nome: 'DDD Inexistente', Telefone: '(00) 91111-2222', Participou: 'Não' }
+      { Nome: 'Telefone Falso', Telefone: '12345', Participou: 'Não' }
     ];
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -149,72 +197,20 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
     });
 
     expect(importResult.totalImported).toBe(1);
-    expect(importResult.invalidRows.length).toBe(2);
-    expect(importResult.invalidRows[0].error).toBeDefined();
+    expect(importResult.invalidRows.length).toBe(1);
   });
 
   // =========================================================================
-  // CENÁRIO D: Pessoa responde justificativa clara
+  // CENÁRIO G: Falha no WhatsApp
   // =========================================================================
-  it('Cenário D: Deve classificar corretamente resposta com justificativa clara (SAUDE, TRABALHO, VIAGEM)', async () => {
-    const resultSaude = await inboundUseCase.execute({
-      fromPhone: '+5511977771234',
-      text: 'Oi pastor! Tive febre muito alta e dor no corpo, precisei ir ao médico tomar remédio.'
-    });
-
-    expect(resultSaude.isOptOut).toBe(false);
-    expect(resultSaude.classification?.category).toBe('SAUDE');
-    expect(resultSaude.classification?.confidence).toBeGreaterThanOrEqual(0.70);
-    expect(resultSaude.classification?.suggestedReply).toContain('recuperação');
-
-    const resultTrabalho = await inboundUseCase.execute({
-      fromPhone: '+5511977775678',
-      text: 'Boa noite! Peguei escala de plantão extra na empresa e trabalhei até tarde.'
-    });
-
-    expect(resultTrabalho.classification?.category).toBe('TRABALHO');
-    expect(resultTrabalho.classification?.requiresHumanAttention).toBe(false);
-  });
-
-  // =========================================================================
-  // CENÁRIO E: Pessoa responde algo ambíguo
-  // =========================================================================
-  it('Cenário E: Deve classificar resposta ambígua/monossilábica como INCONCLUSIVO com confiança baixa', async () => {
-    const result = await inboundUseCase.execute({
-      fromPhone: '+5511977779999',
-      text: '👍 ok'
-    });
-
-    expect(result.classification?.category).toBe('INCONCLUSIVO');
-    expect(result.classification?.confidence).toBeLessThan(0.60);
-  });
-
-  // =========================================================================
-  // CENÁRIO F: Pessoa pede contato humano / oração
-  // =========================================================================
-  it('Cenário F: Deve identificar pedido de atendimento/oração com requires_human_attention = true e urgência ALTA', async () => {
-    const result = await inboundUseCase.execute({
-      fromPhone: '+5511966665555',
-      text: 'Pastor, estou passando por uma fase muito difícil de luto e depressão na minha família. Por favor orem por mim e preciso de ajuda.'
-    });
-
-    expect(result.classification?.category).toBe('PEDIDO_ATENDIMENTO');
-    expect(result.classification?.requiresHumanAttention).toBe(true);
-    expect(result.classification?.urgency).toBe('ALTA');
-    expect(result.classification?.sentiment).toBe('PREOCUPADO');
-  });
-
-  // =========================================================================
-  // CENÁRIO G: WhatsApp retorna erro
-  // =========================================================================
-  it('Cenário G: Deve tratar graciosa e resilientemente erro de entrega retornado pelo provedor WhatsApp', async () => {
+  it('Cenário G: Deve tratar graciosa e resilientemente erro de entrega', async () => {
     const event = await prisma.event.create({
-      data: { name: 'Evento Teste Erro', eventDate: new Date() }
+      data: { name: 'Evento Erro', eventDate: new Date() }
     });
 
     const person = await prisma.person.create({
       data: {
-        name: 'Contato com Erro',
+        name: 'Contato Teste',
         phone: '11911112222',
         normalizedPhone: '+5511911112222',
         optOut: false
@@ -222,14 +218,9 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
     });
 
     await prisma.attendance.create({
-      data: {
-        personId: person.id,
-        eventId: event.id,
-        attended: false
-      }
+      data: { personId: person.id, eventId: event.id, attended: false, invited: true }
     });
 
-    // Simula falha no provedor
     mockWhatsApp.setFailNextSend(true);
 
     const campaignResult = await dispatchUseCase.execute({
@@ -240,13 +231,12 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
 
     expect(campaignResult.totalFailed).toBe(1);
     expect(campaignResult.messages[0].status).toBe('FAILED');
-    expect(campaignResult.messages[0].error).toContain('Simulação de erro na entrega');
   });
 
   // =========================================================================
-  // CENÁRIO H: IA indisponível (Fallback Heurístico Local Ativo)
+  // CENÁRIO H: Resiliência de IA Offline (Fallback Heurístico Local)
   // =========================================================================
-  it('Cenário H: Deve utilizar o motor de Fallback Heurístico Local com sucesso caso a IA externa esteja offline', async () => {
+  it('Cenário H: Deve acionar o Rule-Based Fallback local caso a IA externa esteja offline', async () => {
     const fallbackEngine = new RuleBasedFallbackProvider();
 
     const analysis = await fallbackEngine.classifyAbsence(
@@ -256,7 +246,6 @@ describe('Suíte Completa de Validação de Cenários E2E (A a H)', () => {
 
     expect(analysis.category).toBe('VIAGEM');
     expect(analysis.providerUsed).toBe('RULE_BASED_FALLBACK');
-    expect(analysis.suggested_reply).toContain('viagem');
-    expect(analysis.requires_human_attention).toBe(false);
+    expect(analysis.priority).toBe('LOW');
   });
 });

@@ -35,7 +35,7 @@ export class ImportAttendanceUseCase {
     let absentCount = 0;
 
     for (const row of parsed.validRows) {
-      // 1. Upsert da Pessoa (mantém o optOut prévio se já existir)
+      // 1. Upsert da Pessoa (mantém o optOut e consentStatus prévios se já existirem)
       const person = await prisma.person.upsert({
         where: { normalizedPhone: row.normalizedPhone },
         update: {
@@ -48,11 +48,15 @@ export class ImportAttendanceUseCase {
           phone: row.rawPhone,
           normalizedPhone: row.normalizedPhone,
           notes: row.notes,
-          optOut: false
+          optOut: false,
+          consentStatus: 'OPTED_IN',
+          consentSource: 'SPREADSHEET_IMPORT'
         }
       });
 
-      // 2. Upsert da Presença no Evento
+      // 2. Upsert da Presença no Evento (com status explícito e universo convidado)
+      const attendanceStatus = row.attended ? 'ATTENDED' : 'ABSENT';
+
       await prisma.attendance.upsert({
         where: {
           personId_eventId: {
@@ -62,13 +66,17 @@ export class ImportAttendanceUseCase {
         },
         update: {
           attended: row.attended,
+          status: attendanceStatus,
+          invited: true,
           notes: row.notes || undefined
         },
         create: {
           personId: person.id,
           eventId: event.id,
           invited: true,
+          confirmed: true,
           attended: row.attended,
+          status: attendanceStatus,
           notes: row.notes,
           source: 'CSV_IMPORT'
         }
@@ -82,7 +90,7 @@ export class ImportAttendanceUseCase {
       }
     }
 
-    // 3. Atualiza os contadores agregados no Evento
+    // 3. Atualiza os contadores agregados no Evento (Single Source of Truth)
     await prisma.event.update({
       where: { id: event.id },
       data: {

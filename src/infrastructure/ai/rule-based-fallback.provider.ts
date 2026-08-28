@@ -3,7 +3,10 @@ import {
   AbsenceAnalysis,
   AbsenceCategory,
   Sentiment,
-  Urgency
+  Urgency,
+  Priority,
+  Intent,
+  NextAction
 } from '../../domain/value-objects/absence-taxonomy.vo.js';
 
 interface RuleDefinition {
@@ -11,6 +14,9 @@ interface RuleDefinition {
   regex: RegExp;
   sentiment: Sentiment;
   urgency: Urgency;
+  priority: Priority;
+  intent: Intent;
+  nextAction: NextAction;
   requiresAttention: boolean;
   summary: string;
 }
@@ -22,6 +28,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(orem|ora(c|ç)(a|ã)o|orar|luto|faleceu|morreu|crise|socorro|depress|suic|pastor.*conversar|ajuda.*urgente|preciso.*ajuda|momento.*dif(i|í)cil)/i,
       sentiment: 'PREOCUPADO',
       urgency: 'ALTA',
+      priority: 'URGENT',
+      intent: 'PRAYER_REQUEST',
+      nextAction: 'PASTORAL_CONTACT',
       requiresAttention: true,
       summary: 'Solicitação explícita de oração, visita pastoral ou momento de crise.'
     },
@@ -30,6 +39,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(doen(c|ç)a|doente|febre|upa|hospital|m(e|é)dic(o|a)|consulta|internad|rem(e|é)dio|covid|dengue|dor|gripe|enxaqueca|passando mal|cirurgia|repouso)/i,
       sentiment: 'PREOCUPADO',
       urgency: 'MEDIA',
+      priority: 'HIGH',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REQUIRE_HUMAN_APPROVAL',
       requiresAttention: true,
       summary: 'Problema de saúde, doença ou consulta médica.'
     },
@@ -38,6 +50,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(trabalh(o|ando)|trampo|plant(a|ã)o|escala|empresa|reuni(a|ã)o de servi(c|ç)o|hora extra|chefe|dobrar)/i,
       sentiment: 'NEUTRO',
       urgency: 'BAIXA',
+      priority: 'LOW',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REPLY_IMMEDIATELY',
       requiresAttention: false,
       summary: 'Compromisso profissional, turno, plantão ou hora extra.'
     },
@@ -46,6 +61,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(viaj(ando|ei|em|ar)|estrada|aeroporto|voo|fora da cidade|interior|praia|f(e|é)rias)/i,
       sentiment: 'POSITIVO',
       urgency: 'BAIXA',
+      priority: 'LOW',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REPLY_IMMEDIATELY',
       requiresAttention: false,
       summary: 'Em viagem a trabalho ou lazer fora da cidade.'
     },
@@ -54,6 +72,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(filh(o|a)|m(a|ã)e|pai|espos(o|a)|marido|fam(i|í)lia|sobrinh(o|a)|beb(e|ê)|sogr(o|a)|visita.*parente)/i,
       sentiment: 'NEUTRO',
       urgency: 'MEDIA',
+      priority: 'MEDIUM',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REQUIRE_HUMAN_APPROVAL',
       requiresAttention: false,
       summary: 'Compromisso familiar ou assistência a parentes.'
     },
@@ -62,6 +83,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(chuva|chovendo|alagamento|tr(a|â)nsito|engarraf|pneu|carro quebrou|sem condu(c|ç)(a|ã)o|ônibus|carona|uber)/i,
       sentiment: 'NEUTRO',
       urgency: 'MEDIA',
+      priority: 'LOW',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REPLY_IMMEDIATELY',
       requiresAttention: false,
       summary: 'Dificuldade de transporte, trânsito ou condições climáticas.'
     },
@@ -70,6 +94,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(faculdade|curso|prova|estud(o|ando)|outr(o|a) compromisso|aula|trabalho da facul)/i,
       sentiment: 'NEUTRO',
       urgency: 'BAIXA',
+      priority: 'LOW',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REPLY_IMMEDIATELY',
       requiresAttention: false,
       summary: 'Compromisso acadêmico ou evento prévio agendado.'
     },
@@ -78,6 +105,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(esquec(i|eu)|perdi.*hora|me confundi|achei que era.*amanh(a|ã)|confundi.*data)/i,
       sentiment: 'NEUTRO',
       urgency: 'BAIXA',
+      priority: 'LOW',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'REPLY_IMMEDIATELY',
       requiresAttention: false,
       summary: 'Esqueceu o dia/horário ou se confundiu com as datas.'
     },
@@ -86,6 +116,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(n(a|ã)o sabia|n(a|ã)o fiquei sabendo|que horas|qual.*endere(c|ç)o|n(a|ã)o recebi.*convite)/i,
       sentiment: 'NEUTRO',
       urgency: 'MEDIA',
+      priority: 'MEDIUM',
+      intent: 'QUESTION',
+      nextAction: 'REQUIRE_HUMAN_APPROVAL',
       requiresAttention: false,
       summary: 'Falta de informação sobre horário, local ou convite.'
     },
@@ -94,6 +127,9 @@ export class RuleBasedFallbackProvider implements IAIService {
       regex: /(n(a|ã)o quis ir|n(a|ã)o estava afim|n(a|ã)o vou mais|desanimad(o|a)|pregui(c|ç)a)/i,
       sentiment: 'NEGATIVO',
       urgency: 'MEDIA',
+      priority: 'HIGH',
+      intent: 'JUSTIFY_ABSENCE',
+      nextAction: 'FOLLOW_UP_TASK',
       requiresAttention: true,
       summary: 'Desânimo ou desinteresse manifestado.'
     }
@@ -110,29 +146,36 @@ export class RuleBasedFallbackProvider implements IAIService {
         const replyResult = await this.generateSuggestedReply(messageText, context, rule.category);
         return {
           category: rule.category,
+          reason: rule.summary,
+          intent: rule.intent,
           confidence: 0.85,
           sentiment: rule.sentiment,
+          urgency: rule.urgency,
+          priority: rule.priority,
           summary: rule.summary,
           requires_human_attention: rule.requiresAttention,
-          urgency: rule.urgency,
           suggested_reply: replyResult.suggestedReply,
+          next_action: rule.nextAction,
           providerUsed: 'RULE_BASED_FALLBACK'
         };
       }
     }
 
-    // Se o texto for muito curto ou não der match
     const isAmbiguous = text.length < 15 || text.toLowerCase() === 'ok' || text.toLowerCase() === 'sim' || text.toLowerCase() === 'não';
     const suggested = await this.generateSuggestedReply(messageText, context, 'INCONCLUSIVO');
 
     return {
       category: isAmbiguous ? 'INCONCLUSIVO' : 'OUTRO',
+      reason: isAmbiguous ? 'Resposta ambígua' : 'Outro motivo',
+      intent: isAmbiguous ? 'OTHER' : 'JUSTIFY_ABSENCE',
       confidence: isAmbiguous ? 0.40 : 0.65,
       sentiment: 'NEUTRO',
+      urgency: 'BAIXA',
+      priority: isAmbiguous ? 'MEDIUM' : 'LOW',
       summary: isAmbiguous ? 'Resposta monossilábica ou sem contexto claro de ausência.' : 'Outro motivo não categorizado diretamente.',
       requires_human_attention: isAmbiguous,
-      urgency: 'BAIXA',
       suggested_reply: suggested.suggestedReply,
+      next_action: isAmbiguous ? 'REQUEST_CLARIFICATION' : 'REQUIRE_HUMAN_APPROVAL',
       providerUsed: 'RULE_BASED_FALLBACK'
     };
   }

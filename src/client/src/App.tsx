@@ -4,6 +4,7 @@ import { DashboardView } from './components/DashboardView.js';
 import { EventsView } from './components/EventsView.js';
 import { CampaignsView } from './components/CampaignsView.js';
 import { ConversationsView } from './components/ConversationsView.js';
+import { TasksView } from './components/TasksView.js';
 import { PersonsView } from './components/PersonsView.js';
 import { SandboxPhoneSimulator } from './components/SandboxPhoneSimulator.js';
 import { api } from './services/api.js';
@@ -56,6 +57,7 @@ export const App: React.FC = () => {
         currentTab={currentTab}
         onTabChange={setCurrentTab}
         pendingAttentionCount={metrics?.pendingAttentionCount || 0}
+        pendingTasksCount={metrics?.pendingFollowUpsCount || 0}
       />
 
       {/* Main Content Area */}
@@ -65,11 +67,12 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Módulo Atual /</span>
             <span className="text-sm font-bold text-slate-900 capitalize">
-              {currentTab === 'dashboard' && 'Dashboard de Engajamento'}
+              {currentTab === 'dashboard' && 'Dashboard de Engajamento & Presença'}
               {currentTab === 'events' && 'Gestão de Eventos e Presença'}
               {currentTab === 'campaigns' && 'Campanhas Pós-Evento (WhatsApp)'}
-              {currentTab === 'conversations' && 'Central de Conversas e Triagem de IA'}
-              {currentTab === 'persons' && 'Base de Pessoas e CRM'}
+              {currentTab === 'conversations' && 'Central de Conversas & Triagem Inteligente'}
+              {currentTab === 'tasks' && 'Acompanhamentos Pastorais & Tarefas'}
+              {currentTab === 'persons' && 'Base de Pessoas & Linha do Tempo (CRM)'}
               {currentTab === 'sandbox' && 'Emulador Sandbox WhatsApp'}
             </span>
           </div>
@@ -111,6 +114,12 @@ export const App: React.FC = () => {
           {currentTab === 'conversations' && (
             <ConversationsView
               conversations={conversations}
+              onRefresh={loadAllData}
+            />
+          )}
+
+          {currentTab === 'tasks' && (
+            <TasksView
               onRefresh={loadAllData}
             />
           )}

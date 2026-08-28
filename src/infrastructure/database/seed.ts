@@ -1,9 +1,11 @@
 import { prisma } from './prisma.client.js';
 
 async function main() {
-  console.log('[Seed] Iniciando população do banco de dados...');
+  console.log('[Seed] Iniciando população do banco de dados relacional...');
 
-  // Limpa registros anteriores para seed limpo
+  // 1. Limpa registros anteriores de demonstração
+  await prisma.followUpTask.deleteMany();
+  await prisma.consentHistory.deleteMany();
   await prisma.aIAnalysis.deleteMany();
   await prisma.message.deleteMany();
   await prisma.conversation.deleteMany();
@@ -13,44 +15,68 @@ async function main() {
   await prisma.event.deleteMany();
   await prisma.user.deleteMany();
 
-  // 1. Usuário Administrador
-  const admin = await prisma.user.create({
+  // 2. Cria Usuário Administrador / Líder
+  const user = await prisma.user.create({
     data: {
-      name: 'Pastor Marcos Oliveira',
-      email: 'admin@igrejaconecta.com',
-      passwordHash: '$2b$12$eX4mpL3H4shP4ssw0rdS3cur31234567890abcdefghijklmnopqrst',
+      name: 'Pastor Tiago Rocha',
+      email: 'pastor@conecta.org',
+      passwordHash: 'hash_demo_123456',
       role: 'ADMIN'
     }
   });
 
-  // 2. Evento Principal
+  // 3. Cria Evento de Demonstração
   const event = await prisma.event.create({
     data: {
-      name: 'Culto de Celebração de Domingo',
-      description: 'Culto especial de celebração, adoração e comunhão comunitária.',
-      eventDate: new Date('2026-08-23T19:00:00-03:00'),
-      location: 'Templo Principal - Av. das Nações, 1500',
+      name: 'Culto de Domingo - Noite da Família',
+      description: 'Encontro comunitário com celebração e acolhimento',
+      eventDate: new Date('2026-08-23T19:00:00Z'),
+      location: 'Templo Central - São Paulo/SP',
       totalAttendees: 4,
       totalAbsentees: 6,
       status: 'COMPLETED'
     }
   });
 
-  // 3. Contatos Presentes
-  const presentes = [
-    { name: 'Carlos Eduardo Santos', phone: '(11) 98111-2233', norm: '+5511981112233' },
-    { name: 'Ana Paula Ferreira', phone: '(11) 98222-3344', norm: '+5511982223344' },
-    { name: 'Lucas Gabriel Silveira', phone: '(21) 99333-4455', norm: '+5521993334455' },
-    { name: 'Beatriz Almeida Costa', phone: '(31) 98444-5566', norm: '+5531984445566' }
+  // 4. Criação de 10 Pessoas com Telefones E.164 Válidos
+  const peopleData = [
+    // 4 Presentes
+    { name: 'Lucas Ferreira', phone: '(11) 98111-0001', normalizedPhone: '+5511981110001', attended: true },
+    { name: 'Beatriz Almeida', phone: '(11) 98111-0002', normalizedPhone: '+5511981110002', attended: true },
+    { name: 'Gabriel Santos', phone: '(11) 98111-0003', normalizedPhone: '+5511981110003', attended: true },
+    { name: 'Juliana Mendes', phone: '(11) 98111-0004', normalizedPhone: '+5511981110004', attended: true },
+
+    // 6 Ausentes
+    { name: 'Mariana Souza', phone: '(11) 98765-4321', normalizedPhone: '+5511987654321', attended: false }, // Saúde
+    { name: 'Carlos Eduardo', phone: '(11) 98111-0005', normalizedPhone: '+5511981110005', attended: false }, // Saúde
+    { name: 'Rodrigo Lima', phone: '(11) 98111-0006', normalizedPhone: '+5511981110006', attended: false },   // Trabalho
+    { name: 'Fernanda Costa', phone: '(11) 98111-0007', normalizedPhone: '+5511981110007', attended: false }, // Trabalho
+    { name: 'Paulo Ricardo', phone: '(11) 98111-0008', normalizedPhone: '+5511981110008', attended: false },  // Ambíguo
+    { name: 'Carla Nogueira', phone: '(11) 98111-0009', normalizedPhone: '+5511981110009', attended: false }  // Opt-out
   ];
 
-  for (const p of presentes) {
+  const createdPersons: Record<string, any> = {};
+
+  for (const p of peopleData) {
     const person = await prisma.person.create({
       data: {
         name: p.name,
         phone: p.phone,
-        normalizedPhone: p.norm,
-        optOut: false
+        normalizedPhone: p.normalizedPhone,
+        optOut: false,
+        consentStatus: 'OPTED_IN',
+        consentSource: 'SPREADSHEET_IMPORT'
+      }
+    });
+
+    createdPersons[p.name] = person;
+
+    await prisma.consentHistory.create({
+      data: {
+        personId: person.id,
+        status: 'OPTED_IN',
+        source: 'SPREADSHEET_IMPORT',
+        reason: 'Importação inicial de lista de participantes'
       }
     });
 
@@ -59,216 +85,381 @@ async function main() {
         personId: person.id,
         eventId: event.id,
         invited: true,
-        attended: true,
+        confirmed: true,
+        attended: p.attended,
+        status: p.attended ? 'ATTENDED' : 'ABSENT',
         source: 'CSV_IMPORT'
       }
     });
   }
 
-  // 4. Contatos Ausentes com cenários reais de justificativa
-  const ausentesData = [
-    {
-      name: 'Mariana Souza Rocha',
-      phone: '(11) 98765-4321',
-      norm: '+5511987654321',
-      replyText: 'Oi pastor! Infelizmente hoje não consegui ir, minha filha mais nova começou com uma febre alta agora à tarde e estou levando ela na UPA.',
-      category: 'SAUDE',
-      confidence: 0.94,
-      sentiment: 'PREOCUPADO',
-      urgency: 'MEDIA',
-      summary: 'Filha com febre alta sendo levada ao pronto-socorro.',
-      attention: true,
-      suggestedReply: 'Olá, Mariana! Sentimos muito por isso. Desejamos melhoras rápidas para sua princesinha e que Deus renove a saúde dela. Qualquer coisa que precisar conte conosco!'
-    },
-    {
-      name: 'Roberto Fernando Lima',
-      phone: '(11) 97654-3210',
-      norm: '+5511976543210',
-      replyText: 'Boa noite! Peguei escala de plantão extra no hospital hoje e só saio amanhã às 7h. No próximo domingo estarei firme!',
-      category: 'TRABALHO',
-      confidence: 0.96,
-      sentiment: 'POSITIVO',
-      urgency: 'BAIXA',
-      summary: 'Plantão extra de trabalho no hospital durante a noite.',
-      attention: false,
-      suggestedReply: 'Olá, Roberto! Que Deus abençoe seu plantão e seu trabalho hoje. Você fez falta, mas nos vemos no próximo domingo!'
-    },
-    {
-      name: 'Juliana Mendes Duarte',
-      phone: '(21) 98888-7766',
-      norm: '+5521988887766',
-      replyText: 'Irmão, estou passando por uma fase muito pesada na minha vida e na minha família, sinto muita angústia. Por favor orem por mim e se puderem me liguem.',
-      category: 'PEDIDO_ATENDIMENTO',
-      confidence: 0.98,
-      sentiment: 'PREOCUPADO',
-      urgency: 'ALTA',
-      summary: 'Momento de crise familiar/pessoal com pedido urgente de oração e contato.',
-      attention: true,
-      suggestedReply: 'Olá, Juliana! Recebemos sua mensagem com todo carinho. Você não está sozinha e já estamos em oração por você. Nosso pastor entrará em contato com você o mais rápido possível. Conta com a gente!'
-    },
-    {
-      name: 'Felipe Augusto Ribeiro',
-      phone: '(41) 99123-4567',
-      norm: '+5541991234567',
-      replyText: 'Fala pessoal! Estou viajando a lazer em Florianópolis com a família, retorno na próxima semana!',
-      category: 'VIAGEM',
-      confidence: 0.92,
-      sentiment: 'POSITIVO',
-      urgency: 'BAIXA',
-      summary: 'Viagem de férias em família fora da cidade.',
-      attention: false,
-      suggestedReply: 'Olá, Felipe! Que você e sua família tenham dias abençoados de descanso. Boa viagem e nos vemos no seu retorno!'
-    },
-    {
-      name: 'Patrícia Gomes Martins',
-      phone: '(11) 99555-6677',
-      norm: '+5511995556677',
-      replyText: '👍 blz valeu',
-      category: 'INCONCLUSIVO',
-      confidence: 0.45,
-      sentiment: 'NEUTRO',
-      urgency: 'BAIXA',
-      summary: 'Resposta monossilábica sem justificativa de ausência.',
-      attention: false,
-      suggestedReply: 'Olá, Patrícia! Esperamos que esteja tudo bem por aí. Qualquer coisa que precisar estamos à disposição!'
-    },
-    {
-      name: 'Diego Carvalho Silva',
-      phone: '(31) 97777-8899',
-      norm: '+5531977778899',
-      replyText: 'Nossa me esqueci totalmente do culto hoje, perdi a hora!',
-      category: 'ESQUECIMENTO',
-      confidence: 0.95,
-      sentiment: 'NEUTRO',
-      urgency: 'BAIXA',
-      summary: 'Esqueceu o horário da reunião.',
-      attention: false,
-      suggestedReply: 'Olá, Diego! Tudo bem, imprevistos acontecem! Esperamos você com muita alegria no próximo encontro!'
-    }
-  ];
-
-  // Campanha criada para os ausentes
+  // 5. Cria Campanha de Disparo Pós-Evento para os 6 Ausentes
   const campaign = await prisma.campaign.create({
     data: {
       eventId: event.id,
-      name: `Campanha Pós-Evento: ${event.name} (Ausentes)`,
+      name: 'Follow-up Ausentes: Culto da Família',
       type: 'AUSENTE_FOLLOWUP',
-      templateName: 'pos_evento_ausente',
-      messageBody: 'Olá, {{nome}}! Graça e Paz! Sentimos sua falta no {{evento}}. Aconteceu alguma coisa? Está tudo bem por aí?',
+      templateName: 'pos_evento_ausente_v1',
+      messageBody: 'Olá, {{nome}}! Sentimos muito sua falta no {{evento}} deste domingo. Está tudo bem com você e sua família?',
       status: 'COMPLETED',
-      totalRecipients: ausentesData.length,
-      totalSent: ausentesData.length,
-      totalDelivered: ausentesData.length,
+      totalRecipients: 6,
+      totalSent: 6,
+      totalDelivered: 6,
       totalFailed: 0
     }
   });
 
-  for (const item of ausentesData) {
-    const person = await prisma.person.create({
-      data: {
-        name: item.name,
-        phone: item.phone,
-        normalizedPhone: item.norm,
-        optOut: false
-      }
-    });
+  // 6. Registra Mensagens Enviadas (Outbound) e Respostas (Inbound) com Análise de IA
 
-    await prisma.attendance.create({
-      data: {
-        personId: person.id,
-        eventId: event.id,
-        invited: true,
-        attended: false,
-        source: 'CSV_IMPORT'
-      }
-    });
-
-    const conversation = await prisma.conversation.create({
-      data: {
-        personId: person.id,
-        status: 'REPLIED',
-        category: item.category,
-        requiresHumanAttention: item.attention,
-        lastMessageAt: new Date()
-      }
-    });
-
-    // Mensagem Outbound da Campanha
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        personId: person.id,
-        campaignId: campaign.id,
-        direction: 'OUTBOUND',
-        providerMessageId: `wamid.seed_out_${person.id.substring(0, 8)}`,
-        content: `Olá, ${item.name.split(' ')[0]}! Graça e Paz! Sentimos sua falta no Culto de Celebração de Domingo. Aconteceu alguma coisa? Está tudo bem por aí?`,
-        status: 'READ',
-        sentAt: new Date(Date.now() - 3600000),
-        deliveredAt: new Date(Date.now() - 3550000),
-        readAt: new Date(Date.now() - 3500000)
-      }
-    });
-
-    // Mensagem Inbound com Resposta
-    const inboundMsg = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        personId: person.id,
-        direction: 'INBOUND',
-        providerMessageId: `wamid.seed_in_${person.id.substring(0, 8)}`,
-        content: item.replyText,
-        status: 'READ',
-        deliveredAt: new Date(Date.now() - 1800000),
-        readAt: new Date(Date.now() - 1800000)
-      }
-    });
-
-    // Análise de IA
-    await prisma.aIAnalysis.create({
-      data: {
-        messageId: inboundMsg.id,
-        conversationId: conversation.id,
-        category: item.category,
-        confidence: item.confidence,
-        sentiment: item.sentiment,
-        summary: item.summary,
-        requiresHumanAttention: item.attention,
-        suggestedReply: item.suggestedReply,
-        modelUsed: 'GEMINI (gemini-2.0-flash)',
-        rawResponse: JSON.stringify({
-          category: item.category,
-          confidence: item.confidence,
-          sentiment: item.sentiment,
-          summary: item.summary,
-          requires_human_attention: item.attention,
-          urgency: item.urgency,
-          suggested_reply: item.suggestedReply
-        })
-      }
-    });
-  }
-
-  // Log de auditoria
-  await prisma.auditLog.create({
+  // Caso 1: Mariana Souza (Saúde / Febre na UPA) -> Prioridade HIGH
+  const pMariana = createdPersons['Mariana Souza'];
+  const convMariana = await prisma.conversation.create({
     data: {
-      userId: admin.id,
-      action: 'DATABASE_SEEDED',
-      entityType: 'System',
-      details: JSON.stringify({
-        events: 1,
-        persons: presentes.length + ausentesData.length,
-        attendances: presentes.length + ausentesData.length,
-        conversations: ausentesData.length
-      })
+      personId: pMariana.id,
+      status: 'REPLIED',
+      priority: 'HIGH',
+      requiresHumanAttention: true,
+      category: 'SAUDE',
+      lastMessageAt: new Date()
     }
   });
 
-  console.log('[Seed] População concluída com sucesso! Banco pronto para uso.');
+  await prisma.message.create({
+    data: {
+      conversationId: convMariana.id,
+      personId: pMariana.id,
+      campaignId: campaign.id,
+      direction: 'OUTBOUND',
+      content: `Olá, Mariana! Sentimos muito sua falta no Culto de Domingo - Noite da Família deste domingo. Está tudo bem com você e sua família?`,
+      status: 'READ',
+      sentAt: new Date(Date.now() - 3600000 * 4),
+      deliveredAt: new Date(Date.now() - 3600000 * 4 + 2000),
+      readAt: new Date(Date.now() - 3600000 * 3)
+    }
+  });
+
+  const msgInMariana = await prisma.message.create({
+    data: {
+      conversationId: convMariana.id,
+      personId: pMariana.id,
+      direction: 'INBOUND',
+      content: 'Oi pastor! Não consegui ir porque minha filha teve febre muito alta e passei a noite com ela na UPA.',
+      status: 'READ',
+      deliveredAt: new Date(Date.now() - 3600000 * 2),
+      readAt: new Date(Date.now() - 3600000 * 2)
+    }
+  });
+
+  await prisma.aIAnalysis.create({
+    data: {
+      messageId: msgInMariana.id,
+      conversationId: convMariana.id,
+      category: 'SAUDE',
+      reason: 'Filha com febre alta e atendimento na UPA',
+      intent: 'JUSTIFY_ABSENCE',
+      confidence: 0.94,
+      sentiment: 'PREOCUPADO',
+      urgency: 'MEDIA',
+      priority: 'HIGH',
+      summary: 'Ausência motivada por febre alta da filha com atendimento hospitalar na UPA.',
+      requiresHumanAttention: true,
+      suggestedReply: 'Olá, Mariana! Sentimos muito por isso. Desejamos uma recuperação rápida e plena para sua filha! Que Deus renove suas forças. Se precisar de algo, conte conosco!',
+      nextAction: 'REQUIRE_HUMAN_APPROVAL',
+      modelUsed: 'GEMINI (gemini-2.0-flash)'
+    }
+  });
+
+  await prisma.followUpTask.create({
+    data: {
+      personId: pMariana.id,
+      conversationId: convMariana.id,
+      title: 'Acompanhamento Pastoral: Mariana Souza (SAUDE)',
+      description: 'Filha esteve na UPA com febre alta. Enviar mensagem de oração e verificar melhora.',
+      priority: 'HIGH',
+      status: 'PENDING'
+    }
+  });
+
+  // Caso 2: Carlos Eduardo (Saúde / Crise e Pedido de Oração) -> Prioridade URGENT
+  const pCarlos = createdPersons['Carlos Eduardo'];
+  const convCarlos = await prisma.conversation.create({
+    data: {
+      personId: pCarlos.id,
+      status: 'REPLIED',
+      priority: 'URGENT',
+      requiresHumanAttention: true,
+      category: 'PEDIDO_ATENDIMENTO',
+      lastMessageAt: new Date()
+    }
+  });
+
+  await prisma.message.create({
+    data: {
+      conversationId: convCarlos.id,
+      personId: pCarlos.id,
+      campaignId: campaign.id,
+      direction: 'OUTBOUND',
+      content: `Olá, Carlos! Sentimos muito sua falta no Culto de Domingo - Noite da Família deste domingo. Está tudo bem com você e sua família?`,
+      status: 'READ'
+    }
+  });
+
+  const msgInCarlos = await prisma.message.create({
+    data: {
+      conversationId: convCarlos.id,
+      personId: pCarlos.id,
+      direction: 'INBOUND',
+      content: 'Pastor, estou passando por uma fase muito difícil de luto e depressão profunda. Preciso de ajuda e oração urgente.',
+      status: 'READ'
+    }
+  });
+
+  await prisma.aIAnalysis.create({
+    data: {
+      messageId: msgInCarlos.id,
+      conversationId: convCarlos.id,
+      category: 'PEDIDO_ATENDIMENTO',
+      reason: 'Luto e depressão com solicitação de socorro pastoral',
+      intent: 'PRAYER_REQUEST',
+      confidence: 0.98,
+      sentiment: 'PREOCUPADO',
+      urgency: 'ALTA',
+      priority: 'URGENT',
+      summary: 'Membro em sofrimento emocional por luto e depressão, solicitando contato e oração imediatos.',
+      requiresHumanAttention: true,
+      suggestedReply: 'Olá, Carlos! Recebemos sua mensagem com muito carinho e já estamos em oração por você. O pastor Tiago entrará em contato direto ainda hoje. Você não está sozinho!',
+      nextAction: 'PASTORAL_CONTACT',
+      modelUsed: 'GEMINI (gemini-2.0-flash)'
+    }
+  });
+
+  await prisma.followUpTask.create({
+    data: {
+      personId: pCarlos.id,
+      conversationId: convCarlos.id,
+      title: 'URGENTE: Contato Pastoral com Carlos Eduardo',
+      description: 'Membro em luto e depressão solicitando oração e visita.',
+      priority: 'URGENT',
+      status: 'PENDING'
+    }
+  });
+
+  // Caso 3: Rodrigo Lima (Trabalho / Plantão) -> Prioridade LOW
+  const pRodrigo = createdPersons['Rodrigo Lima'];
+  const convRodrigo = await prisma.conversation.create({
+    data: {
+      personId: pRodrigo.id,
+      status: 'REPLIED',
+      priority: 'LOW',
+      requiresHumanAttention: false,
+      category: 'TRABALHO',
+      lastMessageAt: new Date()
+    }
+  });
+
+  await prisma.message.create({
+    data: {
+      conversationId: convRodrigo.id,
+      personId: pRodrigo.id,
+      campaignId: campaign.id,
+      direction: 'OUTBOUND',
+      content: `Olá, Rodrigo! Sentimos muito sua falta no Culto de Domingo. Está tudo bem?`,
+      status: 'READ'
+    }
+  });
+
+  const msgInRodrigo = await prisma.message.create({
+    data: {
+      conversationId: convRodrigo.id,
+      personId: pRodrigo.id,
+      direction: 'INBOUND',
+      content: 'Boa noite! Peguei escala de plantão extra na empresa e trabalhei até tarde.',
+      status: 'READ'
+    }
+  });
+
+  await prisma.aIAnalysis.create({
+    data: {
+      messageId: msgInRodrigo.id,
+      conversationId: convRodrigo.id,
+      category: 'TRABALHO',
+      intent: 'JUSTIFY_ABSENCE',
+      confidence: 0.92,
+      sentiment: 'NEUTRO',
+      urgency: 'BAIXA',
+      priority: 'LOW',
+      summary: 'Ausência devido a escala de plantão profissional extra.',
+      requiresHumanAttention: false,
+      suggestedReply: 'Olá, Rodrigo! Entendemos perfeitamente. Que Deus abençoe seu trabalho e sua escala! Esperamos você no próximo domingo!',
+      nextAction: 'REPLY_IMMEDIATELY',
+      modelUsed: 'GEMINI (gemini-2.0-flash)'
+    }
+  });
+
+  // Caso 4: Fernanda Costa (Trabalho / Turno Noturno) -> Prioridade LOW
+  const pFernanda = createdPersons['Fernanda Costa'];
+  const convFernanda = await prisma.conversation.create({
+    data: {
+      personId: pFernanda.id,
+      status: 'REPLIED',
+      priority: 'LOW',
+      requiresHumanAttention: false,
+      category: 'TRABALHO',
+      lastMessageAt: new Date()
+    }
+  });
+
+  await prisma.message.create({
+    data: {
+      conversationId: convFernanda.id,
+      personId: pFernanda.id,
+      campaignId: campaign.id,
+      direction: 'OUTBOUND',
+      content: `Olá, Fernanda! Sentimos muito sua falta no Culto de Domingo.`,
+      status: 'READ'
+    }
+  });
+
+  const msgInFernanda = await prisma.message.create({
+    data: {
+      conversationId: convFernanda.id,
+      personId: pFernanda.id,
+      direction: 'INBOUND',
+      content: 'Olá! Estava trabalhando no turno da noite do hospital.',
+      status: 'READ'
+    }
+  });
+
+  await prisma.aIAnalysis.create({
+    data: {
+      messageId: msgInFernanda.id,
+      conversationId: convFernanda.id,
+      category: 'TRABALHO',
+      intent: 'JUSTIFY_ABSENCE',
+      confidence: 0.90,
+      sentiment: 'NEUTRO',
+      urgency: 'BAIXA',
+      priority: 'LOW',
+      summary: 'Turno noturno no hospital.',
+      requiresHumanAttention: false,
+      suggestedReply: 'Olá, Fernanda! Que Deus abençoe sua vocação e trabalho na saúde! Sentimos sua falta e te esperamos no próximo encontro!',
+      nextAction: 'REPLY_IMMEDIATELY',
+      modelUsed: 'GEMINI (gemini-2.0-flash)'
+    }
+  });
+
+  // Caso 5: Paulo Ricardo (Ambíguo / "👍 ok") -> Prioridade MEDIUM
+  const pPaulo = createdPersons['Paulo Ricardo'];
+  const convPaulo = await prisma.conversation.create({
+    data: {
+      personId: pPaulo.id,
+      status: 'REPLIED',
+      priority: 'MEDIUM',
+      requiresHumanAttention: true,
+      category: 'INCONCLUSIVO',
+      lastMessageAt: new Date()
+    }
+  });
+
+  await prisma.message.create({
+    data: {
+      conversationId: convPaulo.id,
+      personId: pPaulo.id,
+      campaignId: campaign.id,
+      direction: 'OUTBOUND',
+      content: `Olá, Paulo! Sentimos muito sua falta no Culto de Domingo. Está tudo bem?`,
+      status: 'READ'
+    }
+  });
+
+  const msgInPaulo = await prisma.message.create({
+    data: {
+      conversationId: convPaulo.id,
+      personId: pPaulo.id,
+      direction: 'INBOUND',
+      content: '👍 ok valeu',
+      status: 'READ'
+    }
+  });
+
+  await prisma.aIAnalysis.create({
+    data: {
+      messageId: msgInPaulo.id,
+      conversationId: convPaulo.id,
+      category: 'INCONCLUSIVO',
+      intent: 'GREETING',
+      confidence: 0.35,
+      sentiment: 'NEUTRO',
+      urgency: 'BAIXA',
+      priority: 'MEDIUM',
+      summary: 'Resposta vaga com emoji e agradecimento monossilábico sem motivo informado.',
+      requiresHumanAttention: true,
+      suggestedReply: 'Olá, Paulo! Obrigado pelo retorno. Esperamos que esteja tudo ótimo por aí! Qualquer coisa estamos à disposição!',
+      nextAction: 'REQUEST_CLARIFICATION',
+      modelUsed: 'RULE_BASED_FALLBACK'
+    }
+  });
+
+  // Caso 6: Carla Nogueira (Opt-Out / "SAIR") -> Bloqueada LGPD
+  const pCarla = createdPersons['Carla Nogueira'];
+  await prisma.person.update({
+    where: { id: pCarla.id },
+    data: {
+      optOut: true,
+      consentStatus: 'OPTED_OUT',
+      optOutReason: 'Solicitou descadastro via mensagem "SAIR"',
+      optOutAt: new Date()
+    }
+  });
+
+  await prisma.consentHistory.create({
+    data: {
+      personId: pCarla.id,
+      status: 'OPTED_OUT',
+      reason: 'Comando de cancelamento "SAIR" recebido',
+      source: 'WEBHOOK_KEYWORD'
+    }
+  });
+
+  const convCarla = await prisma.conversation.create({
+    data: {
+      personId: pCarla.id,
+      status: 'CLOSED',
+      priority: 'LOW',
+      requiresHumanAttention: false,
+      category: 'OPT_OUT',
+      lastMessageAt: new Date()
+    }
+  });
+
+  await prisma.message.create({
+    data: {
+      conversationId: convCarla.id,
+      personId: pCarla.id,
+      campaignId: campaign.id,
+      direction: 'OUTBOUND',
+      content: `Olá, Carla! Sentimos muito sua falta no Culto de Domingo.`,
+      status: 'READ'
+    }
+  });
+
+  await prisma.message.create({
+    data: {
+      conversationId: convCarla.id,
+      personId: pCarla.id,
+      direction: 'INBOUND',
+      content: 'SAIR',
+      status: 'READ'
+    }
+  });
+
+  console.log('[Seed] População de dados concluída com sucesso!');
+  console.log(`[Seed] 10 Pessoas cadastradas (4 Presentes, 6 Ausentes com respostas reais e IA classificada).`);
 }
 
 main()
   .catch((e) => {
-    console.error('[Seed] Erro:', e);
+    console.error('[Seed] Erro ao popular banco:', e);
     process.exit(1);
   })
   .finally(async () => {

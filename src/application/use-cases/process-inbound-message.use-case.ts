@@ -17,14 +17,18 @@ export interface ProcessInboundMessageResult {
   isOptOut: boolean;
   classification?: {
     category: string;
+    intent: string;
     confidence: number;
     sentiment: string;
+    urgency: string;
+    priority: string;
     summary: string;
     requiresHumanAttention: boolean;
-    urgency: string;
-    suggestedReply: string;
+    suggestedReply?: string;
+    nextAction: string;
     providerUsed: string;
   };
+  followUpTaskId?: string;
 }
 
 export class ProcessInboundMessageUseCase {
@@ -45,7 +49,9 @@ export class ProcessInboundMessageUseCase {
           name: 'Participante (WhatsApp)',
           phone: dto.fromPhone,
           normalizedPhone,
-          optOut: false
+          optOut: false,
+          consentStatus: 'OPTED_IN',
+          consentSource: 'INBOUND_MESSAGE'
         }
       });
     }
@@ -60,6 +66,7 @@ export class ProcessInboundMessageUseCase {
         data: {
           personId: person.id,
           status: 'OPEN',
+          priority: 'MEDIUM',
           requiresHumanAttention: false
         }
       });
@@ -80,7 +87,7 @@ export class ProcessInboundMessageUseCase {
     });
 
     // 4. Verificação de Opt-Out Imediato (LGPD / Meta Compliance)
-    const optOutRegex = /^(stop|sair|parar|cancelar|descadastrar|remover|n(a|ã)o\s*quero\s*mais)$/i;
+    const optOutRegex = /^(stop|sair|parar|cancelar|descadastrar|remover|n(a|ã)o\s*quero\s*mais|n(a|ã)o\s*mandem\s*mais)$/i;
     const isOptOut = optOutRegex.test(dto.text.trim());
 
     if (isOptOut) {
@@ -88,7 +95,19 @@ export class ProcessInboundMessageUseCase {
         where: { id: person.id },
         data: {
           optOut: true,
+          consentStatus: 'OPTED_OUT',
+          optOutReason: 'Solicitação de cancelamento recebida via mensagem de WhatsApp',
           optOutAt: new Date()
+        }
+      });
+
+      // Registra no histórico formal de consentimento
+      await prisma.consentHistory.create({
+        data: {
+          personId: person.id,
+          status: 'OPTED_OUT',
+          reason: `Comando de opt-out: "${dto.text}"`,
+          source: 'WEBHOOK_KEYWORD'
         }
       });
 
@@ -97,6 +116,8 @@ export class ProcessInboundMessageUseCase {
         data: {
           status: 'CLOSED',
           category: 'OPT_OUT',
+          priority: 'LOW',
+          requiresHumanAttention: false,
           lastMessageAt: new Date()
         }
       });
@@ -151,31 +172,66 @@ export class ProcessInboundMessageUseCase {
     });
 
     // 7. Persiste a análise estruturada de IA
-    await prisma.aIAnalysis.create({
+    const aiAnalysisRecord = await prisma.aIAnalysis.create({
       data: {
         messageId: inboundMessage.id,
         conversationId: conversation.id,
         category: aiResult.category,
+        reason: aiResult.reason || aiResult.summary,
+        intent: aiResult.intent || 'JUSTIFY_ABSENCE',
         confidence: aiResult.confidence,
         sentiment: aiResult.sentiment,
+        urgency: aiResult.urgency || 'MEDIA',
+        priority: aiResult.priority || 'MEDIUM',
         summary: aiResult.summary,
         requiresHumanAttention: aiResult.requires_human_attention,
-        suggestedReply: aiResult.suggested_reply,
+        suggestedReply: aiResult.suggested_reply || null,
+        nextAction: aiResult.next_action || 'REQUIRE_HUMAN_APPROVAL',
         modelUsed: aiResult.providerUsed,
         rawResponse: JSON.stringify(aiResult)
       }
     });
 
-    // 8. Atualiza a Conversa com os novos insights de IA
+    // 8. Atualiza a Conversa com os novos insights de IA e prioridade
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
         status: 'REPLIED',
         category: aiResult.category,
+        priority: aiResult.priority || 'MEDIUM',
         requiresHumanAttention: aiResult.requires_human_attention
       }
     });
+
+    // 9. Criação Automática de Tarefa de Acompanhamento (Follow-Up Task) para casos críticos
+    let followUpTaskId: string | undefined;
+    if (aiResult.requires_human_attention || aiResult.priority === 'HIGH' || aiResult.priority === 'URGENT') {
+      const task = await prisma.followUpTask.create({
+        data: {
+          personId: person.id,
+          conversationId: conversation.id,
+          title: `Acompanhamento Pastoral: ${person.name} (${aiResult.category})`,
+          description: `Motivo: ${aiResult.summary}\nPróxima ação recomendada: ${aiResult.next_action}`,
+          priority: aiResult.priority || 'HIGH',
+          status: 'PENDING'
+        }
+      });
+      followUpTaskId = task.id;
+
+      await prisma.auditLog.create({
+        data: {
+          action: 'FOLLOW_UP_TASK_CREATED',
+          entityType: 'FollowUpTask',
+          entityId: task.id,
+          details: JSON.stringify({
+            person: person.name,
+            category: aiResult.category,
+            priority: aiResult.priority
+          })
+        }
+      });
+    }
 
     return {
       messageId: inboundMessage.id,
@@ -183,14 +239,18 @@ export class ProcessInboundMessageUseCase {
       personName: person.name,
       conversationId: conversation.id,
       isOptOut: false,
+      followUpTaskId,
       classification: {
         category: aiResult.category,
+        intent: aiResult.intent || 'JUSTIFY_ABSENCE',
         confidence: aiResult.confidence,
         sentiment: aiResult.sentiment,
+        urgency: aiResult.urgency || 'MEDIA',
+        priority: aiResult.priority || 'MEDIUM',
         summary: aiResult.summary,
         requiresHumanAttention: aiResult.requires_human_attention,
-        urgency: aiResult.urgency,
         suggestedReply: aiResult.suggested_reply,
+        nextAction: aiResult.next_action || 'REQUIRE_HUMAN_APPROVAL',
         providerUsed: aiResult.providerUsed
       }
     };
