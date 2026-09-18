@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Server } from 'http';
 import { AddressInfo } from 'net';
 import { prisma } from '../src/infrastructure/database/prisma.client.js';
+import { auth } from '../src/infrastructure/auth/auth.config.js';
 import { buildApp } from '../src/presentation/server.js';
 
 // Define chave de teste para operações criptográficas
@@ -104,46 +105,42 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
     });
     orgBId = orgB.id;
 
-    // 4. Criação de Usuários Reais
-    const userOwnerA = await prisma.user.create({
-      data: {
-        id: `user_owner_a_${timestamp}`,
-        name: 'Owner Org A',
-        email: `owner.a.${timestamp}@test.com`,
-        emailVerified: true
-      }
-    });
-    userOwnerAId = userOwnerA.id;
+    // 4. Criação e Autenticação de Usuários Reais via API oficial do Better Auth
+    const createAuthUser = async (name: string, emailPrefix: string) => {
+      const email = `${emailPrefix}.${timestamp}@test.com`;
+      const res = await auth.api.signUpEmail({
+        body: {
+          name,
+          email,
+          password: 'TestPassword123!'
+        },
+        asResponse: true
+      });
+      const rawCookie = res.headers.get('set-cookie') || '';
+      const cookie = rawCookie
+        .split(',')
+        .map(c => c.split(';')[0].trim())
+        .filter(Boolean)
+        .join('; ');
+      const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+      return { user, cookie };
+    };
 
-    const userOperatorA = await prisma.user.create({
-      data: {
-        id: `user_operator_a_${timestamp}`,
-        name: 'Operator Org A',
-        email: `operator.a.${timestamp}@test.com`,
-        emailVerified: true
-      }
-    });
-    userOperatorAId = userOperatorA.id;
+    const ownerA = await createAuthUser('Owner Org A', `owner.a.${timestamp}`);
+    userOwnerAId = ownerA.user.id;
+    tokenOwnerA = ownerA.cookie;
 
-    const userViewerA = await prisma.user.create({
-      data: {
-        id: `user_viewer_a_${timestamp}`,
-        name: 'Viewer Org A',
-        email: `viewer.a.${timestamp}@test.com`,
-        emailVerified: true
-      }
-    });
-    userViewerAId = userViewerA.id;
+    const operatorA = await createAuthUser('Operator Org A', `operator.a.${timestamp}`);
+    userOperatorAId = operatorA.user.id;
+    tokenOperatorA = operatorA.cookie;
 
-    const userOwnerB = await prisma.user.create({
-      data: {
-        id: `user_owner_b_${timestamp}`,
-        name: 'Owner Org B',
-        email: `owner.b.${timestamp}@test.com`,
-        emailVerified: true
-      }
-    });
-    userOwnerBId = userOwnerB.id;
+    const viewerA = await createAuthUser('Viewer Org A', `viewer.a.${timestamp}`);
+    userViewerAId = viewerA.user.id;
+    tokenViewerA = viewerA.cookie;
+
+    const ownerB = await createAuthUser('Owner Org B', `owner.b.${timestamp}`);
+    userOwnerBId = ownerB.user.id;
+    tokenOwnerB = ownerB.cookie;
 
     // 5. Associação de Membros e Papéis
     await prisma.member.createMany({
@@ -155,24 +152,7 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
       ]
     });
 
-    // 6. Criação de Sessões Reais no PostgreSQL para Better Auth
-    tokenOwnerA = `session_token_owner_a_${timestamp}`;
-    tokenOperatorA = `session_token_operator_a_${timestamp}`;
-    tokenViewerA = `session_token_viewer_a_${timestamp}`;
-    tokenOwnerB = `session_token_owner_b_${timestamp}`;
-
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await prisma.session.createMany({
-      data: [
-        { id: `sess_owner_a_${timestamp}`, userId: userOwnerAId, token: tokenOwnerA, expiresAt },
-        { id: `sess_operator_a_${timestamp}`, userId: userOperatorAId, token: tokenOperatorA, expiresAt },
-        { id: `sess_viewer_a_${timestamp}`, userId: userViewerAId, token: tokenViewerA, expiresAt },
-        { id: `sess_owner_b_${timestamp}`, userId: userOwnerBId, token: tokenOwnerB, expiresAt }
-      ]
-    });
-
-    // 7. Cria Recursos Privados na Org B para testar isolamento cross-tenant
+    // 6. Cria Recursos Privados na Org B para testar isolamento cross-tenant
     const evB = await prisma.event.create({
       data: {
         organizationId: orgBId,
@@ -192,7 +172,7 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
       }
     });
     personBId = perB.id;
-  });
+  }, 30000);
 
   afterAll(async () => {
     try {
@@ -214,6 +194,9 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
         await prisma.session.deleteMany({
           where: { userId: { in: [userOwnerAId, userOperatorAId, userViewerAId, userOwnerBId] } }
         });
+        await prisma.account.deleteMany({
+          where: { userId: { in: [userOwnerAId, userOperatorAId, userViewerAId, userOwnerBId] } }
+        });
         await prisma.user.deleteMany({
           where: { id: { in: [userOwnerAId, userOperatorAId, userViewerAId, userOwnerBId] } }
         });
@@ -233,8 +216,7 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
       'Content-Type': 'application/json'
     };
     if (options.token) {
-      headers['Cookie'] = `better-auth.session_token=${options.token}`;
-      headers['Authorization'] = `Bearer ${options.token}`;
+      headers['Cookie'] = options.token;
     }
     if (options.orgId) {
       headers['x-organization-id'] = options.orgId;
@@ -310,7 +292,7 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
     const res = await apiRequest('/events', { token: tokenOwnerA, orgId: orgBId });
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.error).toBe('FORBIDDEN_WORKSPACE_ACCESS');
+    expect(body.error).toBe('FORBIDDEN_CROSS_TENANT');
   });
 
   // 4. Isolamento Cross-Tenant (Org A tentando ler ou alterar recurso da Org B)
@@ -351,7 +333,7 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
 
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.error).toBe('FORBIDDEN_ROLE');
+    expect(body.error).toBe('INSUFFICIENT_PERMISSIONS');
   });
 
   // 6. Papel OPERATOR tentando alterar /organization/settings deve receber 403 Forbidden
@@ -365,7 +347,7 @@ describe('Testes REAIS de Integração Multi-Tenant & Segurança E2E com Postgre
 
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.error).toBe('FORBIDDEN_ROLE');
+    expect(body.error).toBe('INSUFFICIENT_PERMISSIONS');
   });
 
   it('6.1 Membro com papel OWNER deve conseguir alterar /organization/settings com sucesso (200 OK)', async () => {

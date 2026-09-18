@@ -234,6 +234,7 @@ export const App: React.FC = () => {
           {currentTab === 'events' && (
             <EventsView
               events={events}
+              persons={persons}
               onRefresh={loadAllData}
               onSelectCampaignEvent={handleSelectCampaignEvent}
             />

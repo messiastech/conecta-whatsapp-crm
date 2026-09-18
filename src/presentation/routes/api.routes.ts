@@ -63,6 +63,9 @@ export function createApiRouter(
   router.post('/events/:id/import', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), upload.single('file'), (req, res) =>
     eventsController.importSpreadsheet(req, res)
   );
+  router.post('/events/:id/attendances', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
+    eventsController.registerAttendance(req, res)
+  );
 
   // --- Rotas de Campanhas de Disparo (Tenant-Isolated) ---
   router.get('/campaigns', requireAuth, requireOrganization, (req, res) => campaignsController.list(req, res));
@@ -80,6 +83,9 @@ export function createApiRouter(
 
   // --- Rotas de Pessoas (CRM) e Linha do Tempo (Tenant-Isolated) ---
   router.get('/persons', requireAuth, requireOrganization, (req, res) => personsController.list(req, res));
+  router.post('/persons', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
+    personsController.create(req, res)
+  );
   router.get('/persons/:id', requireAuth, requireOrganization, (req, res) => personsController.getById(req, res));
   router.get('/persons/:id/timeline', requireAuth, requireOrganization, (req, res) => personsController.getTimeline(req, res));
   router.put('/persons/:id', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>

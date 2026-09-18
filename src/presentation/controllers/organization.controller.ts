@@ -53,7 +53,11 @@ export class OrganizationController {
         return;
       }
 
-      const orgSlug = slug || name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      let orgSlug = slug || name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      const existing = await prisma.organization.findUnique({ where: { slug: orgSlug } });
+      if (existing) {
+        orgSlug = `${orgSlug}-${crypto.randomBytes(3).toString('hex')}`;
+      }
 
       const organization = await prisma.organization.create({
         data: {

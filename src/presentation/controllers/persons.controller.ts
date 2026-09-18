@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.client.js';
+import { PhoneNumber } from '../../domain/value-objects/phone-number.vo.js';
 
 export class PersonsController {
   async list(req: Request, res: Response): Promise<void> {
@@ -272,6 +273,58 @@ export class PersonsController {
       }
 
       res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  async create(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = req.organizationId!;
+      const { name, phone, email, notes } = req.body;
+
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        res.status(400).json({ error: 'Nome do contato é obrigatório' });
+        return;
+      }
+      if (!phone || typeof phone !== 'string' || !phone.trim()) {
+        res.status(400).json({ error: 'Telefone do contato é obrigatório' });
+        return;
+      }
+
+      const phoneValidation = PhoneNumber.normalize(phone);
+      if (!phoneValidation.isValid || !phoneValidation.normalizedPhone) {
+        res.status(400).json({ error: phoneValidation.error || 'Número de telefone inválido' });
+        return;
+      }
+
+      const person = await prisma.person.upsert({
+        where: {
+          organizationId_normalizedPhone: {
+            organizationId,
+            normalizedPhone: phoneValidation.normalizedPhone
+          }
+        },
+        update: {
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email?.trim() || undefined,
+          notes: notes?.trim() || undefined
+        },
+        create: {
+          organizationId,
+          name: name.trim(),
+          phone: phone.trim(),
+          normalizedPhone: phoneValidation.normalizedPhone,
+          email: email?.trim() || null,
+          notes: notes?.trim() || null,
+          optOut: false,
+          consentStatus: 'OPTED_IN',
+          consentSource: 'MANUAL_ENTRY'
+        }
+      });
+
+      res.status(201).json(person);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

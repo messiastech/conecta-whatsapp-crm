@@ -112,4 +112,81 @@ export class EventsController {
       res.status(400).json({ error: err.message });
     }
   }
+
+  async registerAttendance(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = req.organizationId!;
+      const eventId = String(req.params.id);
+      const { personId, attended = true, notes } = req.body;
+
+      if (!personId) {
+        res.status(400).json({ error: 'ID do participante (personId) é obrigatório' });
+        return;
+      }
+
+      const event = await prisma.event.findFirst({
+        where: { id: eventId, organizationId }
+      });
+      if (!event) {
+        res.status(404).json({ error: 'Evento não encontrado' });
+        return;
+      }
+
+      const person = await prisma.person.findFirst({
+        where: { id: personId, organizationId }
+      });
+      if (!person) {
+        res.status(404).json({ error: 'Contato não encontrado' });
+        return;
+      }
+
+      const isAttended = Boolean(attended);
+      const attendance = await prisma.attendance.upsert({
+        where: {
+          organizationId_personId_eventId: {
+            organizationId,
+            personId,
+            eventId
+          }
+        },
+        update: {
+          attended: isAttended,
+          status: isAttended ? 'ATTENDED' : 'ABSENT',
+          notes: notes || undefined
+        },
+        create: {
+          organizationId,
+          personId,
+          eventId,
+          attended: isAttended,
+          status: isAttended ? 'ATTENDED' : 'ABSENT',
+          notes: notes || null,
+          invited: true,
+          confirmed: true,
+          source: 'MANUAL_ENTRY'
+        },
+        include: {
+          person: true
+        }
+      });
+
+      // Atualiza contadores do evento
+      const [attendeesCount, absenteesCount] = await Promise.all([
+        prisma.attendance.count({ where: { eventId, organizationId, attended: true } }),
+        prisma.attendance.count({ where: { eventId, organizationId, attended: false } })
+      ]);
+
+      await prisma.event.update({
+        where: { id: eventId },
+        data: {
+          totalAttendees: attendeesCount,
+          totalAbsentees: absenteesCount
+        }
+      });
+
+      res.status(201).json(attendance);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
 }

@@ -190,6 +190,19 @@ export const api = {
     return res.json();
   },
 
+  async registerAttendance(eventId: string, data: { personId: string; attended?: boolean; notes?: string }): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/events/${eventId}/attendances`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao registrar presença');
+    }
+    return res.json();
+  },
+
   // --- Campaigns ---
   async getCampaigns(): Promise<CampaignItem[]> {
     const res = await apiFetch(`${API_BASE}/campaigns`);
@@ -246,6 +259,19 @@ export const api = {
 
     const res = await apiFetch(`${API_BASE}/persons?${params.toString()}`);
     if (!res.ok) throw new Error('Falha ao obter pessoas');
+    return res.json();
+  },
+
+  async createPerson(data: { name: string; phone: string; email?: string; notes?: string }): Promise<PersonItem> {
+    const res = await apiFetch(`${API_BASE}/persons`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao cadastrar contato');
+    }
     return res.json();
   },
 

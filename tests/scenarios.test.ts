@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as XLSX from 'xlsx';
 import { prisma } from '../src/infrastructure/database/prisma.client.js';
 import { ImportAttendanceUseCase } from '../src/application/use-cases/import-attendance.use-case.js';
@@ -20,6 +20,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
   let importUseCase: ImportAttendanceUseCase;
   let dispatchUseCase: DispatchCampaignUseCase;
   let inboundUseCase: ProcessInboundMessageUseCase;
+  let orgId: string;
 
   beforeAll(async () => {
     mockWhatsApp = MockWhatsAppProvider.getInstance();
@@ -28,16 +29,34 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     dispatchUseCase = new DispatchCampaignUseCase(mockWhatsApp);
     inboundUseCase = new ProcessInboundMessageUseCase(compositeAI);
 
-    // Limpeza de tabelas para testes limpos
-    await prisma.followUpTask.deleteMany();
-    await prisma.consentHistory.deleteMany();
-    await prisma.aIAnalysis.deleteMany();
-    await prisma.message.deleteMany();
-    await prisma.conversation.deleteMany();
-    await prisma.campaign.deleteMany();
-    await prisma.attendance.deleteMany();
-    await prisma.person.deleteMany();
-    await prisma.event.deleteMany();
+    // Cria organização de teste isolada
+    const org = await prisma.organization.create({
+      data: {
+        name: 'Org Scenarios Test',
+        slug: `org-scenarios-${Date.now()}`
+      }
+    });
+    orgId = org.id;
+  }, 30000);
+
+  afterAll(async () => {
+    try {
+      if (orgId) {
+        await prisma.followUpTask.deleteMany({ where: { organizationId: orgId } });
+        await prisma.consentHistory.deleteMany({ where: { organizationId: orgId } });
+        await prisma.aIAnalysis.deleteMany({ where: { organizationId: orgId } });
+        await prisma.message.deleteMany({ where: { organizationId: orgId } });
+        await prisma.conversation.deleteMany({ where: { organizationId: orgId } });
+        await prisma.campaign.deleteMany({ where: { organizationId: orgId } });
+        await prisma.attendance.deleteMany({ where: { organizationId: orgId } });
+        await prisma.person.deleteMany({ where: { organizationId: orgId } });
+        await prisma.event.deleteMany({ where: { organizationId: orgId } });
+        await prisma.organization.delete({ where: { id: orgId } });
+      }
+      await prisma.$disconnect();
+    } catch {
+      // Ignora erros de teardown
+    }
   });
 
   // =========================================================================
@@ -46,6 +65,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
   it('Regressão Canônica: Fluxo completo de 10 pessoas (4 presentes, 6 ausentes) com IA, Follow-ups e Opt-Out', async () => {
     const event = await prisma.event.create({
       data: {
+        organizationId: orgId,
         name: 'Culto de Celebração e Família',
         eventDate: new Date('2026-08-28T19:00:00Z'),
         location: 'Auditório Central'
@@ -75,6 +95,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // 1. Importação
     const importRes = await importUseCase.execute({
+      organizationId: orgId,
       eventId: event.id,
       fileBuffer: buffer
     });
@@ -85,6 +106,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // 2. Disparo para os 6 Ausentes
     const campRes = await dispatchUseCase.execute({
+      organizationId: orgId,
       eventId: event.id,
       type: 'AUSENTE_FOLLOWUP',
       messageTemplate: 'Olá, {{nome}}! Sentimos sua falta no {{evento}}!'
@@ -96,6 +118,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     // 3. Simulação de Respostas dos 6 Ausentes
     // 2 Saúde
     const res1 = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: '+5511987654321',
       text: 'Oi pastor! Tive febre alta e fui na UPA com minha filha.'
     });
@@ -104,6 +127,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     expect(res1.followUpTaskId).toBeDefined();
 
     const res2 = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: '+5511981110005',
       text: 'Pastor, estou em crise de depressão precisando de oração e socorro.'
     });
@@ -113,6 +137,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // 2 Trabalho
     const res3 = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: '+5511981110006',
       text: 'Boa noite! Peguei escala de plantão extra no trabalho.'
     });
@@ -120,6 +145,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     expect(res3.classification?.priority).toBe('LOW');
 
     const res4 = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: '+5511981110007',
       text: 'Olá! Estava trabalhando no turno da noite da empresa.'
     });
@@ -127,6 +153,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // 1 Ambíguo
     const res5 = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: '+5511981110008',
       text: '👍 ok'
     });
@@ -134,20 +161,26 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // 1 Opt-Out
     const res6 = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: '+5511981110009',
       text: 'SAIR'
     });
     expect(res6.isOptOut).toBe(true);
 
     const personOptOut = await prisma.person.findUnique({
-      where: { normalizedPhone: '+5511981110009' }
+      where: {
+        organizationId_normalizedPhone: {
+          organizationId: orgId,
+          normalizedPhone: '+5511981110009'
+        }
+      }
     });
     expect(personOptOut?.optOut).toBe(true);
     expect(personOptOut?.consentStatus).toBe('OPTED_OUT');
 
     // 4. Verificação de Tarefas de Acompanhamento (Follow-Ups)
     const pendingTasks = await prisma.followUpTask.findMany({
-      where: { status: 'PENDING' }
+      where: { organizationId: orgId, status: 'PENDING' }
     });
     expect(pendingTasks.length).toBeGreaterThanOrEqual(2);
   });
@@ -157,7 +190,11 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
   // =========================================================================
   it('Cenário B: Deve tratar duplicidades de contatos sem duplicar registros', async () => {
     const event = await prisma.event.create({
-      data: { name: 'Culto de Quarta', eventDate: new Date() }
+      data: {
+        organizationId: orgId,
+        name: 'Culto de Quarta',
+        eventDate: new Date()
+      }
     });
 
     const rows = [
@@ -171,6 +208,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     const importResult = await importUseCase.execute({
+      organizationId: orgId,
       eventId: event.id,
       fileBuffer: buffer
     });
@@ -184,7 +222,11 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
   // =========================================================================
   it('Cenário C: Deve isolar telefones inválidos sem abortar o lote', async () => {
     const event = await prisma.event.create({
-      data: { name: 'Workshop', eventDate: new Date() }
+      data: {
+        organizationId: orgId,
+        name: 'Workshop',
+        eventDate: new Date()
+      }
     });
 
     const rows = [
@@ -198,6 +240,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     const importResult = await importUseCase.execute({
+      organizationId: orgId,
       eventId: event.id,
       fileBuffer: buffer
     });
@@ -211,11 +254,16 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
   // =========================================================================
   it('Cenário G: Deve tratar graciosa e resilientemente erro de entrega', async () => {
     const event = await prisma.event.create({
-      data: { name: 'Evento Erro', eventDate: new Date() }
+      data: {
+        organizationId: orgId,
+        name: 'Evento Erro',
+        eventDate: new Date()
+      }
     });
 
     const person = await prisma.person.create({
       data: {
+        organizationId: orgId,
         name: 'Contato Teste',
         phone: '11911112222',
         normalizedPhone: '+5511911112222',
@@ -224,12 +272,19 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     });
 
     await prisma.attendance.create({
-      data: { personId: person.id, eventId: event.id, attended: false, invited: true }
+      data: {
+        organizationId: orgId,
+        personId: person.id,
+        eventId: event.id,
+        attended: false,
+        invited: true
+      }
     });
 
     mockWhatsApp.setFailNextSend(true);
 
     const campaignResult = await dispatchUseCase.execute({
+      organizationId: orgId,
       eventId: event.id,
       type: 'AUSENTE_FOLLOWUP',
       messageTemplate: 'Olá {{nome}}!'
@@ -264,6 +319,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // 1º envio do webhook
     const firstResult = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: testPhone,
       text: 'Não consegui ir no culto porque estava de plantão no hospital.',
       providerMessageId: duplicateWamid
@@ -272,17 +328,18 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     expect(firstResult.messageId).toBeDefined();
 
     const totalMessagesBefore = await prisma.message.count({
-      where: { providerMessageId: duplicateWamid }
+      where: { organizationId: orgId, providerMessageId: duplicateWamid }
     });
     expect(totalMessagesBefore).toBe(1);
 
     const totalAnalysesBefore = await prisma.aIAnalysis.count({
-      where: { messageId: firstResult.messageId }
+      where: { organizationId: orgId, messageId: firstResult.messageId }
     });
     expect(totalAnalysesBefore).toBe(1);
 
     // 2º envio do webhook com o MESMO providerMessageId (simulando retry da Meta)
     const secondResult = await inboundUseCase.execute({
+      organizationId: orgId,
       fromPhone: testPhone,
       text: 'Não consegui ir no culto porque estava de plantão no hospital.',
       providerMessageId: duplicateWamid
@@ -292,12 +349,12 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     expect(secondResult.messageId).toBe(firstResult.messageId);
 
     const totalMessagesAfter = await prisma.message.count({
-      where: { providerMessageId: duplicateWamid }
+      where: { organizationId: orgId, providerMessageId: duplicateWamid }
     });
     expect(totalMessagesAfter).toBe(1); // Nenhuma mensagem duplicada
 
     const totalAnalysesAfter = await prisma.aIAnalysis.count({
-      where: { messageId: firstResult.messageId }
+      where: { organizationId: orgId, messageId: firstResult.messageId }
     });
     expect(totalAnalysesAfter).toBe(1); // Nenhuma análise duplicada
   });
@@ -311,6 +368,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     // 1. Cria uma conversa sem nenhuma mensagem inbound (janela fechada)
     const person = await prisma.person.create({
       data: {
+        organizationId: orgId,
         name: 'Contato Sem Inbound',
         phone: '11977778888',
         normalizedPhone: '+5511977778888',
@@ -320,6 +378,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     const closedConv = await prisma.conversation.create({
       data: {
+        organizationId: orgId,
         personId: person.id,
         status: 'OPEN'
       }
@@ -341,7 +400,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
 
     // Tentativa 1: Envio sem mensagem inbound anterior -> Bloqueado 422
     await conversationsController.reply(
-      { params: { id: closedConv.id }, body: { text: 'Olá, tudo bem?' } } as any,
+      { params: { id: closedConv.id }, body: { text: 'Olá, tudo bem?' }, organizationId: orgId } as any,
       mockRes
     );
 
@@ -349,8 +408,9 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     expect(responseBody.error).toBe('JANELA_24H_EXPIRADA');
 
     // 2. Simula mensagem inbound recebida há 30 horas atrás (janela expirada)
-    const expiredInbound = await prisma.message.create({
+    await prisma.message.create({
       data: {
+        organizationId: orgId,
         conversationId: closedConv.id,
         personId: person.id,
         direction: 'INBOUND',
@@ -361,7 +421,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     });
 
     await conversationsController.reply(
-      { params: { id: closedConv.id }, body: { text: 'Respondendo 30h depois' } } as any,
+      { params: { id: closedConv.id }, body: { text: 'Respondendo 30h depois' }, organizationId: orgId } as any,
       mockRes
     );
 
@@ -371,6 +431,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     // 3. Simula mensagem inbound recebida há 2 horas atrás (janela aberta)
     await prisma.message.create({
       data: {
+        organizationId: orgId,
         conversationId: closedConv.id,
         personId: person.id,
         direction: 'INBOUND',
@@ -381,7 +442,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     });
 
     await conversationsController.reply(
-      { params: { id: closedConv.id }, body: { text: 'Olá! Como posso te ajudar?' } } as any,
+      { params: { id: closedConv.id }, body: { text: 'Olá! Como posso te ajudar?' }, organizationId: orgId } as any,
       mockRes
     );
 
@@ -390,4 +451,3 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
     expect(responseBody.message.content).toBe('Olá! Como posso te ajudar?');
   });
 });
-

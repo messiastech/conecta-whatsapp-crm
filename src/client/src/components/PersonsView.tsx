@@ -12,7 +12,8 @@ import {
   MessageSquare,
   Sparkles,
   ClipboardList,
-  ShieldCheck
+  ShieldCheck,
+  Plus
 } from 'lucide-react';
 import { PersonItem, RelationshipTimelineItem } from '../types.js';
 import { api } from '../services/api.js';
@@ -68,6 +69,38 @@ export const PersonsView: React.FC<PersonsViewProps> = ({ persons, onRefresh }) 
     }
   };
 
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [newName, setNewName] = useState<string>('');
+  const [newPhone, setNewPhone] = useState<string>('');
+  const [newEmail, setNewEmail] = useState<string>('');
+  const [newNotes, setNewNotes] = useState<string>('');
+  const [createLoading, setCreateLoading] = useState<boolean>(false);
+
+  const handleCreatePerson = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim() || !newPhone.trim()) return;
+
+    try {
+      setCreateLoading(true);
+      await api.createPerson({
+        name: newName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim() || undefined,
+        notes: newNotes.trim() || undefined
+      });
+      setShowCreateModal(false);
+      setNewName('');
+      setNewPhone('');
+      setNewEmail('');
+      setNewNotes('');
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao cadastrar contato');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -77,6 +110,12 @@ export const PersonsView: React.FC<PersonsViewProps> = ({ persons, onRefresh }) 
             Linha do tempo completa: eventos, campanhas, respostas, triagem de IA e consentimento LGPD
           </p>
         </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Novo Contato
+        </button>
       </div>
 
       {/* Search & Filter Bar */}
@@ -315,6 +354,81 @@ export const PersonsView: React.FC<PersonsViewProps> = ({ persons, onRefresh }) 
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Criar Contato */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Cadastrar Novo Contato</h3>
+            <p className="text-xs text-slate-500 mb-4">Adicione um novo membro ou visitante ao CRM</p>
+
+            <form onSubmit={handleCreatePerson} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Maria Silva"
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Telefone (WhatsApp)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: (11) 98765-4321 ou +5511987654321"
+                  value={newPhone}
+                  onChange={e => setNewPhone(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">E-mail (Opcional)</label>
+                <input
+                  type="email"
+                  placeholder="Ex: maria@exemplo.com"
+                  value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Observações (Opcional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Notas pastorais, ministério, etc..."
+                  value={newNotes}
+                  onChange={e => setNewNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={createLoading}
+                  className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {createLoading ? 'Salvando...' : 'Salvar Contato'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -11,23 +11,28 @@ import {
   Send,
   Users
 } from 'lucide-react';
-import { EventItem } from '../types.js';
+import { EventItem, PersonItem } from '../types.js';
 import { api } from '../services/api.js';
 
 interface EventsViewProps {
   events: EventItem[];
+  persons?: PersonItem[];
   onRefresh: () => void;
   onSelectCampaignEvent: (eventId: string) => void;
 }
 
 export const EventsView: React.FC<EventsViewProps> = ({
   events,
+  persons = [],
   onRefresh,
   onSelectCampaignEvent
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedEventForImport, setSelectedEventForImport] = useState<string | null>(null);
   const [selectedEventDetails, setSelectedEventDetails] = useState<EventItem | null>(null);
+  const [selectedPersonForAtt, setSelectedPersonForAtt] = useState<string>('');
+  const [attStatus, setAttStatus] = useState<boolean>(true);
+  const [attLoading, setAttLoading] = useState<boolean>(false);
 
   // Form states
   const [name, setName] = useState('');
@@ -82,6 +87,27 @@ export const EventsView: React.FC<EventsViewProps> = ({
       alert(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRegisterAttendance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEventDetails || !selectedPersonForAtt) return;
+
+    try {
+      setAttLoading(true);
+      await api.registerAttendance(selectedEventDetails.id, {
+        personId: selectedPersonForAtt,
+        attended: attStatus
+      });
+      const updated = await api.getEventById(selectedEventDetails.id);
+      setSelectedEventDetails(updated);
+      setSelectedPersonForAtt('');
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao registrar presença');
+    } finally {
+      setAttLoading(false);
     }
   };
 
@@ -378,6 +404,45 @@ export const EventsView: React.FC<EventsViewProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Formulário Rápido de Registro de Presença Manual */}
+            <div className="mt-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-emerald-600" /> Registrar Presença de Contato
+              </h4>
+              <form onSubmit={handleRegisterAttendance} className="flex flex-col sm:flex-row gap-2 items-center">
+                <select
+                  value={selectedPersonForAtt}
+                  onChange={e => setSelectedPersonForAtt(e.target.value)}
+                  className="flex-1 w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white outline-none"
+                  required
+                >
+                  <option value="">Selecione um contato do CRM...</option>
+                  {persons.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.normalizedPhone})
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={attStatus ? 'true' : 'false'}
+                  onChange={e => setAttStatus(e.target.value === 'true')}
+                  className="w-full sm:w-auto px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white outline-none font-semibold"
+                >
+                  <option value="true">Presente</option>
+                  <option value="false">Ausente</option>
+                </select>
+
+                <button
+                  type="submit"
+                  disabled={attLoading || !selectedPersonForAtt}
+                  className="w-full sm:w-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {attLoading ? 'Salvando...' : 'Salvar Presença'}
+                </button>
+              </form>
             </div>
 
             <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-100">
