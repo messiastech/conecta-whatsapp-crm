@@ -29,9 +29,9 @@ export class WebhooksController {
       return;
     }
 
-    // 1. Verifica token global do .env
-    const globalToken = process.env.META_WEBHOOK_VERIFY_TOKEN || 'conecta_webhook_token_secret_2026';
-    if (token === globalToken) {
+    // 1. Verifica token global do .env se explicitamente configurado (sem fallback hardcoded)
+    const globalToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+    if (globalToken && token === globalToken) {
       res.status(200).send(challenge || '');
       return;
     }
@@ -57,35 +57,56 @@ export class WebhooksController {
       const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body));
       const signature = req.headers['x-hub-signature-256'] as string | undefined;
 
-      // 1. Localiza a organização através do phoneNumberId presente nos metadados do payload
+      // 1. Localiza a organização EXCLUSIVAMENTE pelo phoneNumberId presente nos metadados
       const phoneNumberId =
         req.body?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
 
-      let targetOrgId: string | null = null;
-      let appSecret: string | null = process.env.META_APP_SECRET || null;
-
-      if (phoneNumberId) {
-        const connection = await prisma.whatsAppConnection.findFirst({
-          where: { phoneNumberId }
+      if (!phoneNumberId) {
+        console.warn('[Webhook] Evento descartado: phone_number_id ausente no payload.');
+        res.status(400).json({
+          error: 'PHONE_NUMBER_ID_REQUIRED',
+          message: 'phone_number_id ausente nos metadados do payload'
         });
-        if (connection) {
-          targetOrgId = connection.organizationId;
-          if (connection.encryptedAppSecret) {
-            appSecret = CryptoService.decrypt(connection.encryptedAppSecret);
-          }
+        return;
+      }
+
+      const connection = await prisma.whatsAppConnection.findFirst({
+        where: { phoneNumberId }
+      });
+
+      if (!connection) {
+        console.warn(`[Webhook] Evento descartado: phone_number_id desconhecido (${phoneNumberId}).`);
+        res.status(404).json({
+          error: 'UNKNOWN_PHONE_NUMBER_ID',
+          message: 'Nenhum tenant associado a este phoneNumberId'
+        });
+        return;
+      }
+
+      const targetOrgId = connection.organizationId;
+
+      // 2. Validação de segurança HMAC-SHA256: Conexão Meta real EXIGE assinatura válida
+      if (!connection.isMock) {
+        if (!signature || !signature.startsWith('sha256=')) {
+          res.status(401).json({
+            error: 'UNAUTHORIZED',
+            message: 'Assinatura X-Hub-Signature-256 obrigatória para conexão Meta real'
+          });
+          return;
         }
-      }
 
-      // Se não identificou por phoneNumberId, busca a organização padrão (ex: primeiro workspace ativo)
-      if (!targetOrgId) {
-        const defaultOrg = await prisma.organization.findFirst({
-          orderBy: { createdAt: 'asc' }
-        });
-        targetOrgId = defaultOrg?.id || null;
-      }
+        const appSecret = connection.encryptedAppSecret
+          ? CryptoService.decrypt(connection.encryptedAppSecret)
+          : null;
 
-      // Validação de assinatura HMAC SHA-256 se appSecret estiver configurado
-      if (appSecret && signature && signature.startsWith('sha256=')) {
+        if (!appSecret) {
+          res.status(500).json({
+            error: 'CONFIG_ERROR',
+            message: 'App Secret não configurado para o tenant'
+          });
+          return;
+        }
+
         const expectedHash = crypto
           .createHmac('sha256', appSecret)
           .update(rawBody)
@@ -95,18 +116,33 @@ export class WebhooksController {
         const expBuf = Buffer.from(expectedHash, 'utf8');
 
         if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-          res.status(403).json({ error: 'Assinatura HMAC-SHA256 inválida' });
+          res.status(403).json({ error: 'FORBIDDEN', message: 'Assinatura HMAC-SHA256 inválida' });
           return;
+        }
+      } else if (signature && signature.startsWith('sha256=')) {
+        // Para mock com assinatura enviada, valida se secret estiver configurado
+        const appSecret = connection.encryptedAppSecret
+          ? CryptoService.decrypt(connection.encryptedAppSecret)
+          : process.env.META_APP_SECRET;
+
+        if (appSecret) {
+          const expectedHash = crypto
+            .createHmac('sha256', appSecret)
+            .update(rawBody)
+            .digest('hex');
+
+          const sigBuf = Buffer.from(signature.substring(7), 'utf8');
+          const expBuf = Buffer.from(expectedHash, 'utf8');
+
+          if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+            res.status(403).json({ error: 'FORBIDDEN', message: 'Assinatura HMAC-SHA256 inválida' });
+            return;
+          }
         }
       }
 
       // Responde imediatamente 200 OK para a Meta
       res.status(200).send('EVENT_RECEIVED');
-
-      if (!targetOrgId) {
-        console.warn('[Webhook] Nenhum workspace cadastrado para processar mensagem.');
-        return;
-      }
 
       const parsed = this.defaultWhatsAppProvider.parseWebhookPayload(req.body);
 

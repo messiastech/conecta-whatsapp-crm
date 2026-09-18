@@ -37,7 +37,11 @@ export const SandboxPhoneSimulator: React.FC = () => {
       if (hist && Array.isArray(hist)) setMessages(hist);
     }).catch(console.error);
 
-    const eventSource = new EventSource('/api/sandbox/events');
+    const activeOrgId = api.getActiveOrganization();
+    const eventSource = new EventSource(
+      activeOrgId ? `/api/sandbox/events?orgId=${encodeURIComponent(activeOrgId)}` : '/api/sandbox/events',
+      { withCredentials: true }
+    );
 
     eventSource.onmessage = (e) => {
       try {

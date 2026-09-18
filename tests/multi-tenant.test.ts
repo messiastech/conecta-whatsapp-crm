@@ -3,11 +3,23 @@ import crypto from 'crypto';
 import { CryptoService } from '../src/infrastructure/security/crypto.service.js';
 import { PhoneNumber } from '../src/domain/value-objects/phone-number.vo.js';
 
+process.env.ENCRYPTION_MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || 'conecta_crm_test_master_key_32_bytes_long!!';
+
+import { validateProductionEnvironment } from '../src/presentation/server.js';
+import { MockWhatsAppProvider } from '../src/infrastructure/whatsapp/mock-whatsapp.provider.js';
+
 describe('SaaS Multi-Tenancy & Security Test Suite', () => {
   // =========================================================================
   // 1. CRIPTOGRAFIA DE SECRETS POR TENANT (AES-256-GCM)
   // =========================================================================
   describe('CryptoService - Criptografia AES-256-GCM de Tokens de Tenants', () => {
+    it('deve lançar erro se ENCRYPTION_MASTER_KEY não estiver configurada', () => {
+      const originalKey = process.env.ENCRYPTION_MASTER_KEY;
+      delete process.env.ENCRYPTION_MASTER_KEY;
+      expect(() => CryptoService.encrypt('segredo')).toThrow(/ENCRYPTION_MASTER_KEY não configurada/);
+      process.env.ENCRYPTION_MASTER_KEY = originalKey;
+    });
+
     it('deve criptografar e descriptografar corretamente com formato iv:authTag:encrypted', () => {
       const originalSecret = 'EAAGNO3s920ZBBAK8...meta_access_token_secret_123456';
       const encrypted = CryptoService.encrypt(originalSecret);
@@ -48,6 +60,30 @@ describe('SaaS Multi-Tenancy & Security Test Suite', () => {
     it('deve rejeitar payload com formato inválido (sem 3 partes)', () => {
       expect(CryptoService.decrypt('invalid_format_string')).toBe('');
       expect(CryptoService.decrypt('part1:part2')).toBe('');
+    });
+  });
+
+  // =========================================================================
+  // 1.1 VALIDAÇÃO DE SEGREDOS OBRIGATÓRIOS EM PRODUÇÃO
+  // =========================================================================
+  describe('Validação de Inicialização em Produção (Fail-Fast)', () => {
+    it('deve falhar no startup em produção se segredos obrigatórios faltarem', () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalDbUrl = process.env.DATABASE_URL;
+      const originalAuthSecret = process.env.BETTER_AUTH_SECRET;
+      const originalMasterKey = process.env.ENCRYPTION_MASTER_KEY;
+
+      process.env.NODE_ENV = 'production';
+      delete process.env.DATABASE_URL;
+      delete process.env.BETTER_AUTH_SECRET;
+      delete process.env.ENCRYPTION_MASTER_KEY;
+
+      expect(() => validateProductionEnvironment()).toThrow(/Startup abortado em ambiente de PRODUÇÃO/);
+
+      process.env.NODE_ENV = originalNodeEnv;
+      process.env.DATABASE_URL = originalDbUrl;
+      process.env.BETTER_AUTH_SECRET = originalAuthSecret;
+      process.env.ENCRYPTION_MASTER_KEY = originalMasterKey;
     });
   });
 
@@ -222,6 +258,59 @@ describe('SaaS Multi-Tenancy & Security Test Suite', () => {
 
       const extractedPhoneNumberId = rawPayload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
       expect(extractedPhoneNumberId).toBe('meta_phone_id_unique_101');
+    });
+  });
+
+  // =========================================================================
+  // 5. ISOLAMENTO DO SIMULADOR SANDBOX POR TENANT
+  // =========================================================================
+  describe('Isolamento Estrito do Simulador Sandbox por Tenant', () => {
+    it('deve isolar histórico e eventos SSE por organizationId', async () => {
+      const mock = MockWhatsAppProvider.getInstance();
+      const org1 = 'org_test_1';
+      const org2 = 'org_test_2';
+
+      // Dispara mensagens para as duas organizações
+      await mock.sendTextMessage('+5511911110001', 'Msg Org 1', org1);
+      await mock.sendTextMessage('+5511922220002', 'Msg Org 2', org2);
+
+      // getHistory sem orgId deve retornar vazio
+      expect(mock.getHistory()).toEqual([]);
+
+      // Histórico de org1 contém apenas mensagens de org1
+      const hist1 = mock.getHistory(org1);
+      expect(hist1.some(m => m.text === 'Msg Org 1')).toBe(true);
+      expect(hist1.some(m => m.text === 'Msg Org 2')).toBe(false);
+
+      // Histórico de org2 contém apenas mensagens de org2
+      const hist2 = mock.getHistory(org2);
+      expect(hist2.some(m => m.text === 'Msg Org 2')).toBe(true);
+      expect(hist2.some(m => m.text === 'Msg Org 1')).toBe(false);
+    });
+
+    it('deve emitir eventos SSE nos canais específicos de cada tenant', async () => {
+      const mock = MockWhatsAppProvider.getInstance();
+      const emitter = mock.getEventsEmitter();
+      const orgX = 'org_tenant_x';
+      const orgY = 'org_tenant_y';
+
+      let receivedInX = false;
+      let receivedInY = false;
+
+      const listenerX = () => { receivedInX = true; };
+      const listenerY = () => { receivedInY = true; };
+
+      emitter.on(`sandbox_event:${orgX}`, listenerX);
+      emitter.on(`sandbox_event:${orgY}`, listenerY);
+
+      // Simula resposta recebida para a Org X
+      mock.simulateIncomingReply('+5511999990001', 'Resposta privada Org X', orgX);
+
+      expect(receivedInX).toBe(true);
+      expect(receivedInY).toBe(false);
+
+      emitter.off(`sandbox_event:${orgX}`, listenerX);
+      emitter.off(`sandbox_event:${orgY}`, listenerY);
     });
   });
 });

@@ -9,6 +9,7 @@ import {
 
 export interface SandboxMessageLog {
   id: string;
+  organizationId?: string;
   direction: 'OUTBOUND' | 'INBOUND';
   toOrFrom: string;
   text: string;
@@ -38,8 +39,11 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
     return this.eventEmitter;
   }
 
-  public getHistory(): SandboxMessageLog[] {
-    return [...this.messageHistory];
+  public getHistory(organizationId?: string): SandboxMessageLog[] {
+    if (!organizationId) {
+      return [];
+    }
+    return this.messageHistory.filter(m => m.organizationId === organizationId);
   }
 
   public setFailNextSend(fail: boolean): void {
@@ -50,7 +54,8 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
     to: string,
     templateName: string,
     parameters: Record<string, string>,
-    fallbackBody?: string
+    fallbackBody?: string,
+    organizationId?: string
   ): Promise<WhatsAppSendResult> {
     const messageId = `wamid.mock_${uuidv4().substring(0, 18)}`;
 
@@ -74,6 +79,7 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
 
     const logEntry: SandboxMessageLog = {
       id: messageId,
+      organizationId,
       direction: 'OUTBOUND',
       toOrFrom: to,
       text: renderedText,
@@ -84,31 +90,46 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
 
     this.messageHistory.push(logEntry);
 
-    // Emite evento em tempo real para o simulador
+    // Emite evento para canal global e canal isolado do tenant
     this.eventEmitter.emit('sandbox_event', {
       type: 'OUTGOING_MESSAGE',
+      organizationId,
       message: logEntry
     });
+    if (organizationId) {
+      this.eventEmitter.emit(`sandbox_event:${organizationId}`, {
+        type: 'OUTGOING_MESSAGE',
+        message: logEntry
+      });
+    }
 
     // Simula transição automática de status (delivered após 400ms, read após 1200ms)
     setTimeout(() => {
       logEntry.status = 'delivered';
-      this.eventEmitter.emit('sandbox_event', {
+      const payload = {
         type: 'STATUS_UPDATE',
         messageId,
         status: 'delivered',
         timestamp: new Date()
-      });
+      };
+      this.eventEmitter.emit('sandbox_event', { ...payload, organizationId });
+      if (organizationId) {
+        this.eventEmitter.emit(`sandbox_event:${organizationId}`, payload);
+      }
     }, 400);
 
     setTimeout(() => {
       logEntry.status = 'read';
-      this.eventEmitter.emit('sandbox_event', {
+      const payload = {
         type: 'STATUS_UPDATE',
         messageId,
         status: 'read',
         timestamp: new Date()
-      });
+      };
+      this.eventEmitter.emit('sandbox_event', { ...payload, organizationId });
+      if (organizationId) {
+        this.eventEmitter.emit(`sandbox_event:${organizationId}`, payload);
+      }
     }, 1200);
 
     return {
@@ -121,11 +142,12 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
     };
   }
 
-  async sendTextMessage(to: string, text: string): Promise<WhatsAppSendResult> {
+  async sendTextMessage(to: string, text: string, organizationId?: string): Promise<WhatsAppSendResult> {
     const messageId = `wamid.mock_${uuidv4().substring(0, 18)}`;
 
     const logEntry: SandboxMessageLog = {
       id: messageId,
+      organizationId,
       direction: 'OUTBOUND',
       toOrFrom: to,
       text,
@@ -137,27 +159,42 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
 
     this.eventEmitter.emit('sandbox_event', {
       type: 'OUTGOING_MESSAGE',
+      organizationId,
       message: logEntry
     });
+    if (organizationId) {
+      this.eventEmitter.emit(`sandbox_event:${organizationId}`, {
+        type: 'OUTGOING_MESSAGE',
+        message: logEntry
+      });
+    }
 
     setTimeout(() => {
       logEntry.status = 'delivered';
-      this.eventEmitter.emit('sandbox_event', {
+      const payload = {
         type: 'STATUS_UPDATE',
         messageId,
         status: 'delivered',
         timestamp: new Date()
-      });
+      };
+      this.eventEmitter.emit('sandbox_event', { ...payload, organizationId });
+      if (organizationId) {
+        this.eventEmitter.emit(`sandbox_event:${organizationId}`, payload);
+      }
     }, 300);
 
     setTimeout(() => {
       logEntry.status = 'read';
-      this.eventEmitter.emit('sandbox_event', {
+      const payload = {
         type: 'STATUS_UPDATE',
         messageId,
         status: 'read',
         timestamp: new Date()
-      });
+      };
+      this.eventEmitter.emit('sandbox_event', { ...payload, organizationId });
+      if (organizationId) {
+        this.eventEmitter.emit(`sandbox_event:${organizationId}`, payload);
+      }
     }, 900);
 
     return {
@@ -219,29 +256,39 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
   /**
    * Helper chamado pelo endpoint de simulação para injetar respostas do participante
    */
-  public simulateIncomingReply(fromPhone: string, text: string): InboundWhatsAppMessage {
+  public simulateIncomingReply(fromPhone: string, text: string, organizationId?: string): InboundWhatsAppMessage {
     const messageId = `wamid.mock_in_${uuidv4().substring(0, 16)}`;
     const msg: InboundWhatsAppMessage = {
       messageId,
       fromPhone,
       text,
       timestamp: new Date(),
-      rawPayload: { simulated: true, from: fromPhone, text }
+      rawPayload: { simulated: true, from: fromPhone, text, organizationId }
     };
 
-    this.messageHistory.push({
+    const logEntry: SandboxMessageLog = {
       id: messageId,
+      organizationId,
       direction: 'INBOUND',
       toOrFrom: fromPhone,
       text,
       status: 'read',
       timestamp: msg.timestamp
-    });
+    };
+
+    this.messageHistory.push(logEntry);
 
     this.eventEmitter.emit('sandbox_event', {
       type: 'INCOMING_MESSAGE',
+      organizationId,
       message: msg
     });
+    if (organizationId) {
+      this.eventEmitter.emit(`sandbox_event:${organizationId}`, {
+        type: 'INCOMING_MESSAGE',
+        message: msg
+      });
+    }
 
     return msg;
   }

@@ -32,7 +32,8 @@ export interface IWhatsAppProvider {
     to: string,
     templateName: string,
     parameters: Record<string, string>,
-    fallbackBody?: string
+    fallbackBody?: string,
+    organizationId?: string
   ): Promise<WhatsAppSendResult>;
 
   /**
@@ -40,7 +41,8 @@ export interface IWhatsAppProvider {
    */
   sendTextMessage(
     to: string,
-    text: string
+    text: string,
+    organizationId?: string
   ): Promise<WhatsAppSendResult>;
 
   /**

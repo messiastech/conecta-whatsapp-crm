@@ -18,7 +18,39 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+export function validateProductionEnvironment(): void {
+  if (process.env.NODE_ENV === 'production') {
+    const missing: string[] = [];
+
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl || (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://'))) {
+      missing.push('DATABASE_URL (deve ser uma URL válida de conexão PostgreSQL)');
+    }
+
+    const authSecret = process.env.BETTER_AUTH_SECRET;
+    if (!authSecret || authSecret.length < 32) {
+      missing.push('BETTER_AUTH_SECRET (obrigatório, mínimo 32 caracteres em produção)');
+    }
+
+    const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+    if (!masterKey || masterKey.length < 32) {
+      missing.push('ENCRYPTION_MASTER_KEY (obrigatório, mínimo 32 caracteres para AES-256-GCM)');
+    }
+
+    if (process.env.WHATSAPP_PROVIDER === 'meta' && !process.env.META_WEBHOOK_VERIFY_TOKEN) {
+      missing.push('META_WEBHOOK_VERIFY_TOKEN (obrigatório em produção quando WHATSAPP_PROVIDER=meta)');
+    }
+
+    if (missing.length > 0) {
+      const errorMsg = `[FATAL] Startup abortado em ambiente de PRODUÇÃO. Segredos obrigatórios ausentes ou inválidos:\n${missing.map(m => ` - ${m}`).join('\n')}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+  }
+}
+
 export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppProvider } {
+  validateProductionEnvironment();
   const app = express();
 
   // Configuração rigorosa de CORS e Segurança para SaaS
@@ -72,7 +104,7 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
       phoneNumberId: process.env.META_PHONE_NUMBER_ID || '',
       accessToken: process.env.META_ACCESS_TOKEN || '',
       appSecret: process.env.META_APP_SECRET || '',
-      webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || 'conecta_webhook_token_secret_2026'
+      webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || ''
     });
     console.log('[WhatsApp CRM] Provedor Oficial WhatsApp Cloud API ativado como fallback global');
   } else {

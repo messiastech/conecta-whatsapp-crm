@@ -8,7 +8,10 @@ export class CryptoService {
   private static algorithm = 'aes-256-gcm';
 
   private static getMasterKey(): Buffer {
-    const rawKey = process.env.ENCRYPTION_MASTER_KEY || 'conecta_crm_master_key_default_32_bytes!!';
+    const rawKey = process.env.ENCRYPTION_MASTER_KEY;
+    if (!rawKey) {
+      throw new Error('[Security] ENCRYPTION_MASTER_KEY não configurada no ambiente. Operação criptográfica abortada.');
+    }
     // Garante exatamente 32 bytes (256 bits) usando SHA-256 da chave fornecida
     return crypto.createHash('sha256').update(rawKey).digest();
   }

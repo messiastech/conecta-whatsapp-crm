@@ -101,10 +101,12 @@ export function createApiRouter(
   router.get('/webhooks/whatsapp', (req, res) => webhooksController.verify(req, res));
   router.post('/webhooks/whatsapp', (req, res) => webhooksController.handle(req, res));
 
-  // --- Rotas do Simulador Sandbox ---
-  router.get('/sandbox/events', (req, res) => sandboxController.streamEvents(req, res));
-  router.get('/sandbox/history', (req, res) => sandboxController.getHistory(req, res));
-  router.post('/sandbox/simulate-reply', (req, res) => sandboxController.simulateReply(req, res));
+  // --- Rotas do Simulador Sandbox (Protegidas por Auth, Tenant e RBAC) ---
+  router.get('/sandbox/events', requireAuth, requireOrganization, (req, res) => sandboxController.streamEvents(req, res));
+  router.get('/sandbox/history', requireAuth, requireOrganization, (req, res) => sandboxController.getHistory(req, res));
+  router.post('/sandbox/simulate-reply', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
+    sandboxController.simulateReply(req, res)
+  );
 
   return router;
 }

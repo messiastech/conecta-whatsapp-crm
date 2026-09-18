@@ -15,9 +15,15 @@ export class SandboxController {
   }
 
   /**
-   * Streaming Server-Sent Events (SSE) em tempo real para o simulador visual do dashboard
+   * Streaming Server-Sent Events (SSE) em tempo real isolado por tenant
    */
-  streamEvents(_req: Request, res: Response): void {
+  streamEvents(req: Request, res: Response): void {
+    const organizationId = req.organizationId;
+    if (!organizationId) {
+      res.status(400).json({ error: 'ORGANIZATION_REQUIRED', message: 'Workspace não selecionado' });
+      return;
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -28,25 +34,31 @@ export class SandboxController {
     };
 
     const emitter = this.mockProvider.getEventsEmitter();
-    emitter.on('sandbox_event', listener);
+    const eventChannel = `sandbox_event:${organizationId}`;
+    emitter.on(eventChannel, listener);
 
     // Envia heartbeat para manter a conexão aberta
     const heartbeat = setInterval(() => {
       res.write(': heartbeat\n\n');
     }, 15000);
 
-    _req.on('close', () => {
-      emitter.off('sandbox_event', listener);
+    req.on('close', () => {
+      emitter.off(eventChannel, listener);
       clearInterval(heartbeat);
     });
   }
 
-  getHistory(_req: Request, res: Response): void {
-    res.json(this.mockProvider.getHistory());
+  getHistory(req: Request, res: Response): void {
+    const organizationId = req.organizationId;
+    if (!organizationId) {
+      res.status(400).json({ error: 'ORGANIZATION_REQUIRED', message: 'Workspace não selecionado' });
+      return;
+    }
+    res.json(this.mockProvider.getHistory(organizationId));
   }
 
   /**
-   * Simula o envio de uma resposta pelo WhatsApp isolada por tenant
+   * Simula o envio de uma resposta pelo WhatsApp isolada por tenant (sem fallback)
    */
   async simulateReply(req: Request, res: Response): Promise<void> {
     try {
@@ -57,20 +69,17 @@ export class SandboxController {
         return;
       }
 
-      // Usa a organização ativa do contexto ou busca a primeira cadastrada
-      let organizationId = req.organizationId;
+      const organizationId = req.organizationId;
       if (!organizationId) {
-        const firstOrg = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
-        organizationId = firstOrg?.id;
-      }
-
-      if (!organizationId) {
-        res.status(400).json({ error: 'Nenhum workspace disponível para simular envio' });
+        res.status(400).json({
+          error: 'ORGANIZATION_REQUIRED',
+          message: 'Nenhum workspace selecionado. Operação negada.'
+        });
         return;
       }
 
-      // 1. Injeta a mensagem no Mock Provider para emitir evento SSE
-      const mockMsg = this.mockProvider.simulateIncomingReply(fromPhone, text);
+      // 1. Injeta a mensagem no Mock Provider para emitir evento SSE apenas para o canal do tenant
+      const mockMsg = this.mockProvider.simulateIncomingReply(fromPhone, text, organizationId);
 
       // 2. Processa a mensagem pelo caso de uso isolado do tenant
       const result = await this.inboundUseCase.execute({

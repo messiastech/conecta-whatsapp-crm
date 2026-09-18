@@ -51,12 +51,14 @@ export async function requireOrganization(req: Request, res: Response, next: Nex
   try {
     const targetOrgId =
       (req.headers['x-organization-id'] as string) ||
+      (req.query.orgId as string) ||
+      (req.query.organizationId as string) ||
       req.session?.activeOrganizationId;
 
     if (!targetOrgId) {
       res.status(400).json({
         error: 'ORGANIZATION_REQUIRED',
-        message: 'Nenhuma organização/workspace selecionado. Envie o header x-organization-id.'
+        message: 'Nenhuma organização/workspace selecionado. Envie o header x-organization-id ou query param orgId.'
       });
       return;
     }
