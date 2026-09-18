@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { prisma } from './prisma.client.js';
 
 async function main() {
@@ -54,7 +55,7 @@ async function main() {
         create: {
           isMock: true,
           status: 'CONNECTED',
-          webhookVerifyToken: 'conecta_webhook_token_secret_2026'
+          webhookVerifyToken: crypto.randomBytes(24).toString('hex')
         }
       }
     }

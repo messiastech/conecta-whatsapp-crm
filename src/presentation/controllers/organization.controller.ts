@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { CryptoService } from '../../infrastructure/security/crypto.service.js';
 
@@ -74,7 +75,8 @@ export class OrganizationController {
           whatsAppConnection: {
             create: {
               isMock: true,
-              status: 'CONNECTED'
+              status: 'CONNECTED',
+              webhookVerifyToken: crypto.randomBytes(24).toString('hex')
             }
           }
         },

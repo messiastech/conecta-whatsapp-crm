@@ -158,7 +158,7 @@ model WhatsAppConnection {
   wabaId               String?
   encryptedAccessToken String?
   encryptedAppSecret   String?
-  webhookVerifyToken   String       @default("conecta_webhook_token_secret_2026")
+  webhookVerifyToken   String?
   isMock               Boolean      @default(true)
   status               String       @default("CONNECTED") // CONNECTED, DISCONNECTED, ERROR
   createdAt            DateTime     @default(now())
