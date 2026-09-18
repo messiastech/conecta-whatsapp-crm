@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.client.js';
 
 export class MetricsController {
-  async getDashboardMetrics(_req: Request, res: Response): Promise<void> {
+  async getDashboardMetrics(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
+
       const [
         totalPersons,
         totalEvents,
@@ -20,36 +22,39 @@ export class MetricsController {
         uniqueRecipients,
         uniqueResponders
       ] = await Promise.all([
-        prisma.person.count(),
-        prisma.event.count(),
-        prisma.campaign.count(),
-        prisma.message.count({ where: { direction: 'OUTBOUND' } }),
-        prisma.message.count({ where: { direction: 'OUTBOUND', status: { in: ['DELIVERED', 'READ'] } } }),
-        prisma.message.count({ where: { direction: 'INBOUND' } }),
-        prisma.person.count({ where: { optOut: true } }),
-        prisma.conversation.count({ where: { requiresHumanAttention: true } }),
-        prisma.followUpTask.count({ where: { status: 'PENDING' } }),
+        prisma.person.count({ where: { organizationId } }),
+        prisma.event.count({ where: { organizationId } }),
+        prisma.campaign.count({ where: { organizationId } }),
+        prisma.message.count({ where: { organizationId, direction: 'OUTBOUND' } }),
+        prisma.message.count({ where: { organizationId, direction: 'OUTBOUND', status: { in: ['DELIVERED', 'READ'] } } }),
+        prisma.message.count({ where: { organizationId, direction: 'INBOUND' } }),
+        prisma.person.count({ where: { organizationId, optOut: true } }),
+        prisma.conversation.count({ where: { organizationId, requiresHumanAttention: true } }),
+        prisma.followUpTask.count({ where: { organizationId, status: 'PENDING' } }),
         prisma.aIAnalysis.groupBy({
           by: ['category'],
+          where: { organizationId },
           _count: { category: true }
         }),
         prisma.conversation.groupBy({
           by: ['priority'],
+          where: { organizationId },
           _count: { priority: true }
         }),
         prisma.attendance.groupBy({
           by: ['attended'],
+          where: { organizationId },
           _count: { attended: true }
         }),
-        // Contatos únicos alvos de campanhas
+        // Contatos únicos alvos de campanhas dentro do tenant
         prisma.message.findMany({
-          where: { direction: 'OUTBOUND', campaignId: { not: null } },
+          where: { organizationId, direction: 'OUTBOUND', campaignId: { not: null } },
           select: { personId: true },
           distinct: ['personId']
         }),
-        // Contatos únicos que responderam
+        // Contatos únicos que responderam dentro do tenant
         prisma.message.findMany({
-          where: { direction: 'INBOUND' },
+          where: { organizationId, direction: 'INBOUND' },
           select: { personId: true },
           distinct: ['personId']
         })

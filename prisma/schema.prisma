@@ -1,5 +1,5 @@
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -7,23 +7,178 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ==========================================
+// 1. BETTER AUTH & MULTI-TENANCY MODELS
+// ==========================================
+
 model User {
-  id           String     @id @default(uuid())
-  name         String
-  email        String     @unique
-  passwordHash String
-  role         String     @default("ADMIN") // ADMIN, OPERATOR, VIEWER
-  active       Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  auditLogs    AuditLog[]
+  id            String       @id @default(uuid())
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false)
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
+  invitations   Invitation[]
+  auditLogs     AuditLog[]
 }
+
+model Session {
+  id                   String        @id @default(uuid())
+  userId               String
+  token                String        @unique
+  expiresAt            DateTime
+  ipAddress            String?
+  userAgent            String?
+  activeOrganizationId String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String    @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@index([identifier])
+}
+
+model Organization {
+  id                 String                @id @default(uuid())
+  name               String
+  slug               String?               @unique
+  logo               String?
+  metadata           String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  members            Member[]
+  invitations        Invitation[]
+  settings           OrganizationSettings?
+  whatsAppConnection WhatsAppConnection?
+
+  persons            Person[]
+  events             Event[]
+  attendances        Attendance[]
+  campaigns          Campaign[]
+  conversations      Conversation[]
+  messages           Message[]
+  aiAnalyses         AIAnalysis[]
+  followUpTasks      FollowUpTask[]
+  consentHistories   ConsentHistory[]
+  auditLogs          AuditLog[]
+}
+
+model Member {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String
+  role           String       @default("OPERATOR") // OWNER, ADMIN, OPERATOR, VIEWER
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Invitation {
+  id             String       @id @default(uuid())
+  organizationId String
+  email          String
+  role           String?      @default("OPERATOR")
+  status         String       @default("PENDING") // PENDING, ACCEPTED, REJECTED, CANCELED
+  expiresAt      DateTime
+  inviterId      String
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+// ==========================================
+// 2. TENANT SETTINGS & WHATSAPP CONNECTION
+// ==========================================
+
+model OrganizationSettings {
+  id                 String       @id @default(uuid())
+  organizationId     String       @unique
+  timezone           String       @default("America/Sao_Paulo")
+  language           String       @default("pt-BR")
+  aiProvider         String       @default("GEMINI") // GEMINI, OPENAI, LOCAL_FALLBACK
+  encryptedGeminiKey String?
+  encryptedOpenAiKey String?
+  promptOverrides    String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model WhatsAppConnection {
+  id                   String       @id @default(uuid())
+  organizationId       String       @unique
+  phoneNumberId        String?
+  wabaId               String?
+  encryptedAccessToken String?
+  encryptedAppSecret   String?
+  webhookVerifyToken   String       @default("conecta_webhook_token_secret_2026")
+  isMock               Boolean      @default(true)
+  status               String       @default("CONNECTED") // CONNECTED, DISCONNECTED, ERROR
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([phoneNumberId])
+}
+
+// ==========================================
+// 3. CORE DOMAIN CRM ENTITIES (TENANT ISOLATED)
+// ==========================================
 
 model Person {
   id              String           @id @default(uuid())
+  organizationId  String
   name            String
   phone           String
-  normalizedPhone String           @unique // Formato E.164: +5511999999999
+  normalizedPhone String           // Formato E.164: +5511999999999
   email           String?
   notes           String?
   optOut          Boolean          @default(false)
@@ -34,33 +189,40 @@ model Person {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   attendances     Attendance[]
   conversations   Conversation[]
   messages        Message[]
   followUpTasks   FollowUpTask[]
   consentHistory  ConsentHistory[]
 
+  @@unique([organizationId, normalizedPhone])
+  @@index([organizationId])
   @@index([normalizedPhone])
   @@index([optOut])
   @@index([consentStatus])
 }
 
 model ConsentHistory {
-  id        String   @id @default(uuid())
-  personId  String
-  status    String   // OPTED_IN, OPTED_OUT
-  reason    String?
-  source    String   // WEBHOOK_KEYWORD, MANUAL_CHANGE, FORM_OPTIN
-  ipAddress String?
-  createdAt DateTime @default(now())
+  id             String       @id @default(uuid())
+  organizationId String
+  personId       String
+  status         String       // OPTED_IN, OPTED_OUT
+  reason         String?
+  source         String       // WEBHOOK_KEYWORD, MANUAL_CHANGE, FORM_OPTIN
+  ipAddress      String?
+  createdAt      DateTime     @default(now())
 
-  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([personId])
 }
 
 model Event {
   id             String       @id @default(uuid())
+  organizationId String
   name           String
   description    String?
   eventDate      DateTime
@@ -71,53 +233,64 @@ model Event {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   attendances    Attendance[]
   campaigns      Campaign[]
+
+  @@index([organizationId])
 }
 
 model Attendance {
-  id          String    @id @default(uuid())
-  personId    String
-  eventId     String
-  invited     Boolean   @default(true)
-  confirmed   Boolean   @default(false)
-  attended    Boolean   @default(false)
-  status      String    @default("INVITED") // INVITED, CONFIRMED, ATTENDED, ABSENT, UNREGISTERED_ATTENDEE
-  checkInTime DateTime?
-  source      String    @default("CSV_IMPORT")
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String       @id @default(uuid())
+  organizationId String
+  personId       String
+  eventId        String
+  invited        Boolean      @default(true)
+  confirmed      Boolean      @default(false)
+  attended       Boolean      @default(false)
+  status         String       @default("INVITED") // INVITED, CONFIRMED, ATTENDED, ABSENT, UNREGISTERED_ATTENDEE
+  checkInTime    DateTime?
+  source         String       @default("CSV_IMPORT")
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  person      Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
-  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  @@unique([personId, eventId])
+  @@unique([organizationId, personId, eventId])
+  @@index([organizationId])
   @@index([eventId, attended])
   @@index([eventId, status])
 }
 
 model Campaign {
-  id              String    @id @default(uuid())
+  id              String       @id @default(uuid())
+  organizationId  String
   eventId         String
   name            String
-  type            String    // PRESENTE_FOLLOWUP, AUSENTE_FOLLOWUP
+  type            String       // PRESENTE_FOLLOWUP, AUSENTE_FOLLOWUP
   templateName    String?
   messageBody     String
-  status          String    @default("DRAFT") // DRAFT, RUNNING, COMPLETED
-  totalRecipients Int       @default(0)
-  totalSent       Int       @default(0)
-  totalDelivered  Int       @default(0)
-  totalFailed     Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          String       @default("DRAFT") // DRAFT, RUNNING, COMPLETED
+  totalRecipients Int          @default(0)
+  totalSent       Int          @default(0)
+  totalDelivered  Int          @default(0)
+  totalFailed     Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event           Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   messages        Message[]
+
+  @@index([organizationId])
 }
 
 model Conversation {
   id                     String         @id @default(uuid())
+  organizationId         String
   personId               String
   lastMessageAt          DateTime       @default(now())
   status                 String         @default("OPEN") // OPEN, WAITING_REPLY, REPLIED, CLOSED
@@ -128,11 +301,13 @@ model Conversation {
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
+  organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   person                 Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
   messages               Message[]
   aiAnalyses             AIAnalysis[]
   followUpTasks          FollowUpTask[]
 
+  @@index([organizationId])
   @@index([personId])
   @@index([requiresHumanAttention])
   @@index([priority])
@@ -140,6 +315,7 @@ model Conversation {
 
 model Message {
   id                String       @id @default(uuid())
+  organizationId    String
   conversationId    String
   personId          String
   campaignId        String?
@@ -153,11 +329,13 @@ model Message {
   readAt            DateTime?
   createdAt         DateTime     @default(now())
 
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   person            Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
   campaign          Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   aiAnalyses        AIAnalysis[]
 
+  @@index([organizationId])
   @@index([conversationId])
   @@index([personId])
   @@index([status])
@@ -165,11 +343,12 @@ model Message {
 
 model AIAnalysis {
   id                     String       @id @default(uuid())
+  organizationId         String
   messageId              String
   conversationId         String
   category               String       // TRABALHO, SAUDE, FAMILIA, VIAGEM, etc.
   reason                 String?
-  intent                 String       @default("JUSTIFY_ABSENCE") // JUSTIFY_ABSENCE, PRAYER_REQUEST, QUESTION, OPT_OUT, OTHER
+  intent                 String       @default("JUSTIFY_ABSENCE")
   confidence             Float
   sentiment              String       // POSITIVO, NEUTRO, NEGATIVO, PREOCUPADO
   urgency                String       @default("MEDIA")           // BAIXA, MEDIA, ALTA
@@ -177,14 +356,16 @@ model AIAnalysis {
   summary                String
   requiresHumanAttention Boolean      @default(false)
   suggestedReply         String?
-  nextAction             String       @default("REQUIRE_HUMAN_APPROVAL") // REPLY_IMMEDIATELY, REQUIRE_HUMAN_APPROVAL, PASTORAL_CONTACT, FOLLOW_UP_TASK, NO_ACTION, REQUEST_CLARIFICATION
+  nextAction             String       @default("REQUIRE_HUMAN_APPROVAL")
   rawResponse            String       @default("{}")
   modelUsed              String
   createdAt              DateTime     @default(now())
 
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   message                Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
   conversation           Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([messageId])
   @@index([conversationId])
   @@index([category])
@@ -192,39 +373,45 @@ model AIAnalysis {
 }
 
 model FollowUpTask {
-  id             String       @id @default(uuid())
+  id             String        @id @default(uuid())
+  organizationId String
   personId       String
   conversationId String?
   title          String
   description    String?
-  priority       String       @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
-  status         String       @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  priority       String        @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status         String        @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
   assignedTo     String?
   dueDate        DateTime?
   completedAt    DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person         Person        @relation(fields: [personId], references: [id], onDelete: Cascade)
   conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([personId])
   @@index([status])
   @@index([priority])
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String?
-  action     String
-  entityType String
-  entityId   String?
-  details    String   @default("{}")
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+  id             String        @id @default(uuid())
+  organizationId String?       // Nullable para eventos de autenticação globais
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  details        String        @default("{}")
+  ipAddress      String?
+  createdAt      DateTime      @default(now())
 
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([action])
   @@index([createdAt])
 }

@@ -1,13 +1,16 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { IWhatsAppProvider } from '../../domain/ports/whatsapp-provider.port.js';
+import { WhatsAppProviderFactory } from '../../infrastructure/whatsapp/whatsapp-provider.factory.js';
 
 export class ConversationsController {
-  constructor(private whatsappProvider: IWhatsAppProvider) {}
+  constructor(private defaultProvider?: IWhatsAppProvider) {}
 
-  async list(_req: Request, res: Response): Promise<void> {
+  async list(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const conversations = await prisma.conversation.findMany({
+        where: { organizationId },
         include: {
           person: true,
           messages: {
@@ -31,9 +34,10 @@ export class ConversationsController {
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
-      const conversation = await prisma.conversation.findUnique({
-        where: { id },
+      const conversation = await prisma.conversation.findFirst({
+        where: { id, organizationId },
         include: {
           person: {
             include: {
@@ -65,6 +69,7 @@ export class ConversationsController {
 
   async reply(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
       const { text } = req.body;
 
@@ -73,8 +78,8 @@ export class ConversationsController {
         return;
       }
 
-      const conversation = await prisma.conversation.findUnique({
-        where: { id },
+      const conversation = await prisma.conversation.findFirst({
+        where: { id, organizationId },
         include: { person: true }
       });
 
@@ -89,6 +94,7 @@ export class ConversationsController {
       const lastInboundMessage = await prisma.message.findFirst({
         where: {
           conversationId: id,
+          organizationId,
           direction: 'INBOUND'
         },
         orderBy: { createdAt: 'desc' }
@@ -108,13 +114,16 @@ export class ConversationsController {
         return;
       }
 
-      const sendResult = await this.whatsappProvider.sendTextMessage(
+      const provider = await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+
+      const sendResult = await provider.sendTextMessage(
         person.normalizedPhone,
         text
       );
 
       const message = await prisma.message.create({
         data: {
+          organizationId,
           conversationId: conversation.id,
           personId: person.id,
           direction: 'OUTBOUND',
@@ -137,6 +146,7 @@ export class ConversationsController {
 
       await prisma.auditLog.create({
         data: {
+          organizationId,
           action: 'HUMAN_REPLY_SENT',
           entityType: 'Conversation',
           entityId: conversation.id,

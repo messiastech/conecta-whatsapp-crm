@@ -5,34 +5,171 @@ import {
   ConversationItem,
   PersonItem,
   FollowUpTaskItem,
-  RelationshipTimelineItem
+  RelationshipTimelineItem,
+  AuthUser,
+  OrganizationItem,
+  OrganizationSettingsItem
 } from '../types.js';
 
 const API_BASE = '/api';
 
+let activeOrganizationId: string | null = localStorage.getItem('conecta_active_org_id');
+
+export const setGlobalActiveOrgId = (orgId: string | null) => {
+  activeOrganizationId = orgId;
+  if (orgId) {
+    localStorage.setItem('conecta_active_org_id', orgId);
+  } else {
+    localStorage.removeItem('conecta_active_org_id');
+  }
+};
+
+export const getGlobalActiveOrgId = () => activeOrganizationId;
+
+/**
+ * Wrapper de fetch com credenciais de sessão (cookies) e header multi-tenant
+ */
+async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers || {});
+
+  if (activeOrganizationId && !headers.has('x-organization-id')) {
+    headers.set('x-organization-id', activeOrganizationId);
+  }
+
+  const res = await fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include' // Envia cookies de sessão Better Auth
+  });
+
+  return res;
+}
+
 export const api = {
-  // Metrics
+  // --- Autenticação (Better Auth) ---
+  async login(email: string, password: string): Promise<{ user: AuthUser }> {
+    const res = await apiFetch(`${API_BASE}/auth/sign-in/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao realizar login');
+    }
+    return res.json();
+  },
+
+  async signUp(name: string, email: string, password: string): Promise<{ user: AuthUser }> {
+    const res = await apiFetch(`${API_BASE}/auth/sign-up/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao criar conta');
+    }
+    return res.json();
+  },
+
+  async logout(): Promise<void> {
+    await apiFetch(`${API_BASE}/auth/sign-out`, {
+      method: 'POST'
+    });
+    setGlobalActiveOrgId(null);
+  },
+
+  async getSession(): Promise<{ user: AuthUser; session: any } | null> {
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/get-session`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.user ? data : null;
+    } catch {
+      return null;
+    }
+  },
+
+  // --- Organizações / Workspaces ---
+  async getMyOrganizations(): Promise<OrganizationItem[]> {
+    const res = await apiFetch(`${API_BASE}/organizations/my`);
+    if (!res.ok) throw new Error('Falha ao obter workspaces');
+    return res.json();
+  },
+
+  async createOrganization(name: string, slug?: string): Promise<OrganizationItem> {
+    const res = await apiFetch(`${API_BASE}/organizations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug })
+    });
+    if (!res.ok) throw new Error('Falha ao criar organização');
+    return res.json();
+  },
+
+  async getOrganizationSettings(): Promise<OrganizationSettingsItem> {
+    const res = await apiFetch(`${API_BASE}/organization/settings`);
+    if (!res.ok) throw new Error('Falha ao obter configurações da organização');
+    return res.json();
+  },
+
+  async updateOrganizationSettings(data: {
+    timezone?: string;
+    language?: string;
+    aiProvider?: string;
+    geminiApiKey?: string;
+    openAiApiKey?: string;
+    promptOverrides?: string;
+  }): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/organization/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('Falha ao atualizar configurações');
+    return res.json();
+  },
+
+  async updateWhatsAppConnection(data: {
+    isMock?: boolean;
+    phoneNumberId?: string;
+    wabaId?: string;
+    accessToken?: string;
+    appSecret?: string;
+    webhookVerifyToken?: string;
+  }): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/organization/whatsapp`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('Falha ao atualizar conexão WhatsApp');
+    return res.json();
+  },
+
+  // --- Metrics ---
   async getMetrics(): Promise<DashboardMetrics> {
-    const res = await fetch(`${API_BASE}/metrics/dashboard`);
+    const res = await apiFetch(`${API_BASE}/metrics/dashboard`);
     if (!res.ok) throw new Error('Falha ao obter métricas');
     return res.json();
   },
 
-  // Events
+  // --- Events ---
   async getEvents(): Promise<EventItem[]> {
-    const res = await fetch(`${API_BASE}/events`);
+    const res = await apiFetch(`${API_BASE}/events`);
     if (!res.ok) throw new Error('Falha ao obter eventos');
     return res.json();
   },
 
   async getEventById(id: string): Promise<EventItem> {
-    const res = await fetch(`${API_BASE}/events/${id}`);
+    const res = await apiFetch(`${API_BASE}/events/${id}`);
     if (!res.ok) throw new Error('Falha ao obter evento');
     return res.json();
   },
 
   async createEvent(data: { name: string; description?: string; eventDate: string; location?: string }): Promise<EventItem> {
-    const res = await fetch(`${API_BASE}/events`, {
+    const res = await apiFetch(`${API_BASE}/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -45,7 +182,7 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await fetch(`${API_BASE}/events/${eventId}/import`, {
+    const res = await apiFetch(`${API_BASE}/events/${eventId}/import`, {
       method: 'POST',
       body: formData
     });
@@ -53,9 +190,9 @@ export const api = {
     return res.json();
   },
 
-  // Campaigns
+  // --- Campaigns ---
   async getCampaigns(): Promise<CampaignItem[]> {
-    const res = await fetch(`${API_BASE}/campaigns`);
+    const res = await apiFetch(`${API_BASE}/campaigns`);
     if (!res.ok) throw new Error('Falha ao obter campanhas');
     return res.json();
   },
@@ -66,7 +203,7 @@ export const api = {
     templateName?: string;
     messageTemplate: string;
   }): Promise<any> {
-    const res = await fetch(`${API_BASE}/campaigns`, {
+    const res = await apiFetch(`${API_BASE}/campaigns`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -75,48 +212,51 @@ export const api = {
     return res.json();
   },
 
-  // Conversations
+  // --- Conversations ---
   async getConversations(): Promise<ConversationItem[]> {
-    const res = await fetch(`${API_BASE}/conversations`);
+    const res = await apiFetch(`${API_BASE}/conversations`);
     if (!res.ok) throw new Error('Falha ao obter conversas');
     return res.json();
   },
 
   async getConversationById(id: string): Promise<ConversationItem> {
-    const res = await fetch(`${API_BASE}/conversations/${id}`);
+    const res = await apiFetch(`${API_BASE}/conversations/${id}`);
     if (!res.ok) throw new Error('Falha ao obter conversa');
     return res.json();
   },
 
   async replyConversation(id: string, text: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/conversations/${id}/reply`, {
+    const res = await apiFetch(`${API_BASE}/conversations/${id}/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
     });
-    if (!res.ok) throw new Error('Falha ao enviar resposta');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao enviar resposta');
+    }
     return res.json();
   },
 
-  // Persons (CRM) & Timeline
+  // --- Persons (CRM) & Timeline ---
   async getPersons(search?: string, optOut?: boolean): Promise<PersonItem[]> {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
     if (optOut !== undefined) params.append('optOut', String(optOut));
 
-    const res = await fetch(`${API_BASE}/persons?${params.toString()}`);
+    const res = await apiFetch(`${API_BASE}/persons?${params.toString()}`);
     if (!res.ok) throw new Error('Falha ao obter pessoas');
     return res.json();
   },
 
   async getPersonTimeline(id: string): Promise<{ person: PersonItem; timeline: RelationshipTimelineItem[] }> {
-    const res = await fetch(`${API_BASE}/persons/${id}/timeline`);
+    const res = await apiFetch(`${API_BASE}/persons/${id}/timeline`);
     if (!res.ok) throw new Error('Falha ao obter linha do tempo do contato');
     return res.json();
   },
 
   async updatePerson(id: string, data: { name?: string; notes?: string; optOut?: boolean }): Promise<PersonItem> {
-    const res = await fetch(`${API_BASE}/persons/${id}`, {
+    const res = await apiFetch(`${API_BASE}/persons/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -125,19 +265,19 @@ export const api = {
     return res.json();
   },
 
-  // Tasks & Pastoral Follow-Up
+  // --- Tasks & Pastoral Follow-Up ---
   async getTasks(status?: string, priority?: string): Promise<FollowUpTaskItem[]> {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
     if (priority) params.append('priority', priority);
 
-    const res = await fetch(`${API_BASE}/tasks?${params.toString()}`);
+    const res = await apiFetch(`${API_BASE}/tasks?${params.toString()}`);
     if (!res.ok) throw new Error('Falha ao obter tarefas de acompanhamento');
     return res.json();
   },
 
   async updateTaskStatus(id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED', assignedTo?: string): Promise<FollowUpTaskItem> {
-    const res = await fetch(`${API_BASE}/tasks/${id}`, {
+    const res = await apiFetch(`${API_BASE}/tasks/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, assignedTo })
@@ -146,20 +286,29 @@ export const api = {
     return res.json();
   },
 
-  // Sandbox Simulator
+  // --- Sandbox Simulator ---
   async getSandboxHistory(): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/sandbox/history`);
+    const res = await apiFetch(`${API_BASE}/sandbox/history`);
     if (!res.ok) return [];
     return res.json();
   },
 
   async simulateReply(fromPhone: string, text: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/sandbox/simulate-reply`, {
+    const res = await apiFetch(`${API_BASE}/sandbox/simulate-reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fromPhone, text })
     });
     if (!res.ok) throw new Error('Falha ao simular recebimento no WhatsApp');
     return res.json();
+  },
+
+  // --- Active Workspace Helpers ---
+  getActiveOrganization(): string | null {
+    return getGlobalActiveOrgId();
+  },
+
+  setActiveOrganization(orgId: string | null): void {
+    setGlobalActiveOrgId(orgId);
   }
 };

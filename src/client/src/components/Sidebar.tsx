@@ -7,21 +7,37 @@ import {
   Users,
   Smartphone,
   Sparkles,
-  ClipboardList
+  ClipboardList,
+  Settings,
+  LogOut
 } from 'lucide-react';
+import { OrgSwitcher } from './OrgSwitcher.js';
+import { OrganizationItem, AuthUser } from '../types.js';
 
 interface SidebarProps {
   currentTab: string;
   onTabChange: (tab: string) => void;
   pendingAttentionCount?: number;
   pendingTasksCount?: number;
+  organizations: OrganizationItem[];
+  activeOrgId: string | null;
+  onSelectOrg: (orgId: string) => void;
+  onCreateOrg: (name: string) => Promise<void>;
+  user: AuthUser | null;
+  onLogout: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onTabChange,
   pendingAttentionCount = 0,
-  pendingTasksCount = 0
+  pendingTasksCount = 0,
+  organizations,
+  activeOrgId,
+  onSelectOrg,
+  onCreateOrg,
+  user,
+  onLogout
 }) => {
   const menuItems = [
     {
@@ -63,6 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: null
     },
     {
+      id: 'settings',
+      label: 'Configurações',
+      icon: Settings,
+      badge: null
+    },
+    {
       id: 'sandbox',
       label: 'Simulador WhatsApp',
       icon: Smartphone,
@@ -71,23 +93,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   ];
 
+  const userInitials = user?.name
+    ? user.name
+        .split(' ')
+        .map(n => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+    : 'U';
+
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between shrink-0 shadow-xl border-r border-slate-800">
-      <div>
+      <div className="flex flex-col overflow-hidden">
         {/* Brand Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30">
+        <div className="p-4 border-b border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30 shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>
-          <div>
-            <h1 className="font-bold text-white tracking-wide text-base leading-tight">Conecta CRM</h1>
-            <span className="text-[11px] font-medium text-emerald-400">Relacionamento & IA</span>
+          <div className="overflow-hidden">
+            <h1 className="font-bold text-white tracking-wide text-sm leading-tight">Conecta CRM</h1>
+            <span className="text-[10px] font-medium text-emerald-400">SaaS Multi-Tenant</span>
           </div>
         </div>
 
+        {/* Multi-Tenant Org Switcher */}
+        <OrgSwitcher
+          organizations={organizations}
+          activeOrgId={activeOrgId}
+          onSelectOrg={onSelectOrg}
+          onCreateOrg={onCreateOrg}
+        />
+
         {/* Navigation Items */}
-        <nav className="p-4 space-y-1.5">
-          {menuItems.map((item) => {
+        <nav className="p-3 space-y-1 overflow-y-auto">
+          {menuItems.map(item => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
 
@@ -95,13 +134,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 ${
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 ${
                   isActive
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
                     : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
                   <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                 </div>
@@ -117,17 +156,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      {/* User / Session Info Footer */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/40">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-xs">
-            TR
+      {/* User / Session Info Footer with Logout */}
+      <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5 overflow-hidden">
+          <div className="w-8 h-8 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-xs shrink-0">
+            {userInitials}
           </div>
           <div className="overflow-hidden">
-            <div className="text-xs font-semibold text-white truncate">Pastor Tiago Rocha</div>
-            <div className="text-[10px] text-slate-400 truncate">Liderança Comunitária</div>
+            <div className="text-xs font-semibold text-white truncate">{user?.name || 'Usuário'}</div>
+            <div className="text-[10px] text-slate-400 truncate">{user?.email}</div>
           </div>
         </div>
+
+        <button
+          onClick={onLogout}
+          title="Sair da Conta"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
     </aside>
   );

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { MockWhatsAppProvider } from '../../infrastructure/whatsapp/mock-whatsapp.provider.js';
 import { ProcessInboundMessageUseCase } from '../../application/use-cases/process-inbound-message.use-case.js';
 import { IAIService } from '../../domain/ports/ai-service.port.js';
+import { prisma } from '../../infrastructure/database/prisma.client.js';
 
 export class SandboxController {
   private inboundUseCase: ProcessInboundMessageUseCase;
@@ -45,7 +46,7 @@ export class SandboxController {
   }
 
   /**
-   * Simula o envio de uma resposta pelo WhatsApp (como se o participante estivesse respondendo pelo celular)
+   * Simula o envio de uma resposta pelo WhatsApp isolada por tenant
    */
   async simulateReply(req: Request, res: Response): Promise<void> {
     try {
@@ -56,31 +57,37 @@ export class SandboxController {
         return;
       }
 
+      // Usa a organização ativa do contexto ou busca a primeira cadastrada
+      let organizationId = req.organizationId;
+      if (!organizationId) {
+        const firstOrg = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
+        organizationId = firstOrg?.id;
+      }
+
+      if (!organizationId) {
+        res.status(400).json({ error: 'Nenhum workspace disponível para simular envio' });
+        return;
+      }
+
       // 1. Injeta a mensagem no Mock Provider para emitir evento SSE
       const mockMsg = this.mockProvider.simulateIncomingReply(fromPhone, text);
 
-      // 2. Aciona o pipeline oficial de processamento de mensagem e IA
+      // 2. Processa a mensagem pelo caso de uso isolado do tenant
       const result = await this.inboundUseCase.execute({
+        organizationId,
         fromPhone,
         text,
-        providerMessageId: mockMsg.messageId
+        providerMessageId: mockMsg.messageId,
+        rawPayload: mockMsg.rawPayload
       });
 
       res.status(200).json({
-        simulatedMessage: mockMsg,
-        pipelineResult: result
+        success: true,
+        mockMessage: mockMsg,
+        processedResult: result
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
-  }
-
-  /**
-   * Simula falha na próxima mensagem para testes de resiliência
-   */
-  toggleFail(req: Request, res: Response): void {
-    const { fail } = req.body;
-    this.mockProvider.setFailNextSend(!!fail);
-    res.json({ failNextSend: !!fail });
   }
 }

@@ -175,3 +175,46 @@ export interface PersonItem {
   followUpTasks?: FollowUpTaskItem[];
   consentHistory?: ConsentHistoryItem[];
 }
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  image?: string;
+}
+
+export interface OrganizationItem {
+  id: string;
+  name: string;
+  slug?: string;
+  logo?: string;
+  role: 'OWNER' | 'ADMIN' | 'OPERATOR' | 'VIEWER';
+  isMock: boolean;
+  whatsAppStatus: string;
+}
+
+export interface OrganizationSettingsItem {
+  organization: {
+    id: string;
+    name: string;
+    slug?: string;
+    logo?: string;
+  };
+  settings: {
+    timezone: string;
+    language: string;
+    aiProvider: string;
+    hasCustomGeminiKey: boolean;
+    hasCustomOpenAiKey: boolean;
+    promptOverrides?: string;
+  };
+  whatsApp: {
+    isMock: boolean;
+    status: string;
+    phoneNumberId?: string;
+    wabaId?: string;
+    webhookVerifyToken?: string;
+    hasAccessToken: boolean;
+    hasAppSecret: boolean;
+  };
+}

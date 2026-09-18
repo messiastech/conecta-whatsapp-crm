@@ -1,14 +1,17 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { DispatchCampaignUseCase } from '../../application/use-cases/dispatch-campaign.use-case.js';
+import { WhatsAppProviderFactory } from '../../infrastructure/whatsapp/whatsapp-provider.factory.js';
 import { IWhatsAppProvider } from '../../domain/ports/whatsapp-provider.port.js';
 
 export class CampaignsController {
-  constructor(private whatsappProvider: IWhatsAppProvider) {}
+  constructor(private defaultProvider?: IWhatsAppProvider) {}
 
-  async list(_req: Request, res: Response): Promise<void> {
+  async list(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const campaigns = await prisma.campaign.findMany({
+        where: { organizationId },
         include: {
           event: true,
           _count: {
@@ -25,9 +28,10 @@ export class CampaignsController {
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
-      const campaign = await prisma.campaign.findUnique({
-        where: { id },
+      const campaign = await prisma.campaign.findFirst({
+        where: { id, organizationId },
         include: {
           event: true,
           messages: {
@@ -51,6 +55,7 @@ export class CampaignsController {
 
   async dispatch(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const { eventId, type, templateName, messageTemplate } = req.body;
 
       if (!eventId || !type || !messageTemplate) {
@@ -58,13 +63,17 @@ export class CampaignsController {
         return;
       }
 
-      const useCase = new DispatchCampaignUseCase(this.whatsappProvider);
+      // Obtém o provedor configurado para esta organização
+      const orgProvider = await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+      const useCase = new DispatchCampaignUseCase(orgProvider);
+
       const result = await useCase.execute({
+        organizationId,
         eventId,
         type,
         templateName,
         messageTemplate
-      });
+      }, orgProvider);
 
       res.status(201).json(result);
     } catch (err: any) {

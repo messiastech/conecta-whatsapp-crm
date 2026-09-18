@@ -3,6 +3,7 @@ import { IAIService } from '../../domain/ports/ai-service.port.js';
 import { PhoneNumber } from '../../domain/value-objects/phone-number.vo.js';
 
 export interface ProcessInboundMessageDTO {
+  organizationId: string;
   fromPhone: string;
   text: string;
   providerMessageId?: string;
@@ -76,14 +77,20 @@ export class ProcessInboundMessageUseCase {
       }
     }
 
-    // 1. Localiza ou cria a Pessoa
+    // 1. Localiza ou cria a Pessoa isolada por Tenant
     let person = await prisma.person.findUnique({
-      where: { normalizedPhone }
+      where: {
+        organizationId_normalizedPhone: {
+          organizationId: dto.organizationId,
+          normalizedPhone
+        }
+      }
     });
 
     if (!person) {
       person = await prisma.person.create({
         data: {
+          organizationId: dto.organizationId,
           name: 'Participante (WhatsApp)',
           phone: dto.fromPhone,
           normalizedPhone,
@@ -94,14 +101,18 @@ export class ProcessInboundMessageUseCase {
       });
     }
 
-    // 2. Garante a conversa
+    // 2. Garante a conversa isolada por Tenant
     let conversation = await prisma.conversation.findFirst({
-      where: { personId: person.id }
+      where: {
+        personId: person.id,
+        organizationId: dto.organizationId
+      }
     });
 
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: {
+          organizationId: dto.organizationId,
           personId: person.id,
           status: 'OPEN',
           priority: 'MEDIUM',
@@ -110,11 +121,12 @@ export class ProcessInboundMessageUseCase {
       });
     }
 
-    // 3. Salva a mensagem recebida no banco
+    // 3. Salva a mensagem recebida no banco com organizationId
     let inboundMessage;
     try {
       inboundMessage = await prisma.message.create({
         data: {
+          organizationId: dto.organizationId,
           conversationId: conversation.id,
           personId: person.id,
           direction: 'INBOUND',
@@ -160,9 +172,10 @@ export class ProcessInboundMessageUseCase {
         }
       });
 
-      // Registra no histórico formal de consentimento
+      // Registra no histórico formal de consentimento com organizationId
       await prisma.consentHistory.create({
         data: {
+          organizationId: dto.organizationId,
           personId: person.id,
           status: 'OPTED_OUT',
           reason: `Comando de opt-out: "${dto.text}"`,
@@ -183,6 +196,7 @@ export class ProcessInboundMessageUseCase {
 
       await prisma.auditLog.create({
         data: {
+          organizationId: dto.organizationId,
           action: 'OPT_OUT_PROCESSED',
           entityType: 'Person',
           entityId: person.id,
@@ -204,7 +218,10 @@ export class ProcessInboundMessageUseCase {
 
     // 5. Coleta contexto do evento mais recente para a IA
     const lastAttendance = await prisma.attendance.findFirst({
-      where: { personId: person.id },
+      where: {
+        personId: person.id,
+        organizationId: dto.organizationId
+      },
       include: { event: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -212,6 +229,7 @@ export class ProcessInboundMessageUseCase {
     const lastOutbound = await prisma.message.findFirst({
       where: {
         conversationId: conversation.id,
+        organizationId: dto.organizationId,
         direction: 'OUTBOUND'
       },
       orderBy: { createdAt: 'desc' }
@@ -230,9 +248,10 @@ export class ProcessInboundMessageUseCase {
       outboundMessageText: lastOutbound?.content
     });
 
-    // 7. Persiste a análise estruturada de IA
-    const aiAnalysisRecord = await prisma.aIAnalysis.create({
+    // 7. Persiste a análise estruturada de IA com organizationId
+    await prisma.aIAnalysis.create({
       data: {
+        organizationId: dto.organizationId,
         messageId: inboundMessage.id,
         conversationId: conversation.id,
         category: aiResult.category,
@@ -263,11 +282,12 @@ export class ProcessInboundMessageUseCase {
       }
     });
 
-    // 9. Criação Automática de Tarefa de Acompanhamento (Follow-Up Task) para casos críticos
+    // 9. Criação Automática de Tarefa de Acompanhamento para casos críticos
     let followUpTaskId: string | undefined;
     if (aiResult.requires_human_attention || aiResult.priority === 'HIGH' || aiResult.priority === 'URGENT') {
       const task = await prisma.followUpTask.create({
         data: {
+          organizationId: dto.organizationId,
           personId: person.id,
           conversationId: conversation.id,
           title: `Acompanhamento Pastoral: ${person.name} (${aiResult.category})`,
@@ -280,6 +300,7 @@ export class ProcessInboundMessageUseCase {
 
       await prisma.auditLog.create({
         data: {
+          organizationId: dto.organizationId,
           action: 'FOLLOW_UP_TASK_CREATED',
           entityType: 'FollowUpTask',
           entityId: task.id,

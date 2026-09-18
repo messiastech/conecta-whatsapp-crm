@@ -2,6 +2,7 @@ import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { IWhatsAppProvider } from '../../domain/ports/whatsapp-provider.port.js';
 
 export interface DispatchCampaignDTO {
+  organizationId: string;
   eventId: string;
   type: 'PRESENTE_FOLLOWUP' | 'AUSENTE_FOLLOWUP';
   templateName?: string;
@@ -26,11 +27,19 @@ export interface DispatchCampaignResult {
 }
 
 export class DispatchCampaignUseCase {
-  constructor(private whatsappProvider: IWhatsAppProvider) {}
+  constructor(private defaultProvider?: IWhatsAppProvider) {}
 
-  async execute(dto: DispatchCampaignDTO): Promise<DispatchCampaignResult> {
-    const event = await prisma.event.findUnique({
-      where: { id: dto.eventId },
+  async execute(dto: DispatchCampaignDTO, customProvider?: IWhatsAppProvider): Promise<DispatchCampaignResult> {
+    const provider = customProvider || this.defaultProvider;
+    if (!provider) {
+      throw new Error('Nenhum provedor de WhatsApp configurado para este envio');
+    }
+
+    const event = await prisma.event.findFirst({
+      where: {
+        id: dto.eventId,
+        organizationId: dto.organizationId
+      },
       include: {
         attendances: {
           include: {
@@ -41,7 +50,7 @@ export class DispatchCampaignUseCase {
     });
 
     if (!event) {
-      throw new Error(`Evento com ID ${dto.eventId} não encontrado`);
+      throw new Error(`Evento com ID ${dto.eventId} não encontrado na sua organização`);
     }
 
     const isPresentFollowup = dto.type === 'PRESENTE_FOLLOWUP';
@@ -51,9 +60,10 @@ export class DispatchCampaignUseCase {
       att => att.attended === isPresentFollowup
     );
 
-    // Cria a campanha no banco
+    // Cria a campanha no banco isolada por Tenant
     const campaign = await prisma.campaign.create({
       data: {
+        organizationId: dto.organizationId,
         eventId: event.id,
         name: `Campanha Pós-Evento: ${event.name} (${isPresentFollowup ? 'Presentes' : 'Ausentes'})`,
         type: dto.type,
@@ -85,14 +95,18 @@ export class DispatchCampaignUseCase {
         continue;
       }
 
-      // 1. Garante a existência da conversa
+      // 1. Garante a existência da conversa isolada por Tenant
       let conversation = await prisma.conversation.findFirst({
-        where: { personId: person.id }
+        where: {
+          personId: person.id,
+          organizationId: dto.organizationId
+        }
       });
 
       if (!conversation) {
         conversation = await prisma.conversation.create({
           data: {
+            organizationId: dto.organizationId,
             personId: person.id,
             status: 'OPEN',
             requiresHumanAttention: false
@@ -115,18 +129,19 @@ export class DispatchCampaignUseCase {
         renderedBody = renderedBody.replace(new RegExp(`{{${key}}}`, 'g'), val);
       }
 
-      // 3. Dispara via Provedor WhatsApp (Mock ou Meta Cloud API)
-      const sendResult = await this.whatsappProvider.sendTemplateMessage(
+      // 3. Dispara via Provedor WhatsApp da organização
+      const sendResult = await provider.sendTemplateMessage(
         person.normalizedPhone,
         campaign.templateName || 'template_followup',
         params,
         renderedBody
       );
 
-      // 4. Salva a mensagem no banco
+      // 4. Salva a mensagem no banco com organizationId
       const messageStatus = sendResult.success ? 'SENT' : 'FAILED';
       await prisma.message.create({
         data: {
+          organizationId: dto.organizationId,
           conversationId: conversation.id,
           personId: person.id,
           campaignId: campaign.id,
@@ -174,9 +189,10 @@ export class DispatchCampaignUseCase {
       }
     });
 
-    // 7. Log de Auditoria
+    // 7. Log de Auditoria com organizationId
     await prisma.auditLog.create({
       data: {
+        organizationId: dto.organizationId,
         action: 'CAMPAIGN_DISPATCHED',
         entityType: 'Campaign',
         entityId: campaign.id,

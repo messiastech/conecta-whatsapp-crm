@@ -4,14 +4,20 @@ import { prisma } from '../../infrastructure/database/prisma.client.js';
 export class PersonsController {
   async list(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const { search, optOut, consentStatus } = req.query;
 
-      const where: any = {};
+      const where: any = { organizationId };
+
       if (search && typeof search === 'string') {
-        where.OR = [
-          { name: { contains: search } },
-          { phone: { contains: search } },
-          { normalizedPhone: { contains: search } }
+        where.AND = [
+          {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search } },
+              { normalizedPhone: { contains: search } }
+            ]
+          }
         ];
       }
 
@@ -27,10 +33,12 @@ export class PersonsController {
         where,
         include: {
           attendances: {
+            where: { organizationId },
             include: { event: true },
             orderBy: { createdAt: 'desc' }
           },
           conversations: {
+            where: { organizationId },
             take: 1,
             orderBy: { lastMessageAt: 'desc' },
             include: {
@@ -41,7 +49,7 @@ export class PersonsController {
             }
           },
           followUpTasks: {
-            where: { status: 'PENDING' }
+            where: { organizationId, status: 'PENDING' }
           }
         },
         orderBy: { createdAt: 'desc' }
@@ -55,27 +63,33 @@ export class PersonsController {
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
-      const person = await prisma.person.findUnique({
-        where: { id },
+      const person = await prisma.person.findFirst({
+        where: { id, organizationId },
         include: {
           attendances: {
+            where: { organizationId },
             include: { event: true },
             orderBy: { createdAt: 'desc' }
           },
           messages: {
+            where: { organizationId },
             orderBy: { createdAt: 'asc' },
             include: { aiAnalyses: true }
           },
           conversations: {
+            where: { organizationId },
             include: {
               aiAnalyses: { orderBy: { createdAt: 'desc' } }
             }
           },
           followUpTasks: {
+            where: { organizationId },
             orderBy: { createdAt: 'desc' }
           },
           consentHistory: {
+            where: { organizationId },
             orderBy: { createdAt: 'desc' }
           }
         }
@@ -94,14 +108,15 @@ export class PersonsController {
 
   async getTimeline(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
-      const person = await prisma.person.findUnique({
-        where: { id },
+      const person = await prisma.person.findFirst({
+        where: { id, organizationId },
         include: {
-          attendances: { include: { event: true } },
-          messages: { include: { aiAnalyses: true, campaign: true } },
-          followUpTasks: true,
-          consentHistory: true
+          attendances: { where: { organizationId }, include: { event: true } },
+          messages: { where: { organizationId }, include: { aiAnalyses: true, campaign: true } },
+          followUpTasks: { where: { organizationId } },
+          consentHistory: { where: { organizationId } }
         }
       });
 
@@ -220,11 +235,21 @@ export class PersonsController {
 
   async update(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
       const { name, notes, optOut } = req.body;
 
-      const person = await prisma.person.update({
-        where: { id },
+      const person = await prisma.person.findFirst({
+        where: { id, organizationId }
+      });
+
+      if (!person) {
+        res.status(404).json({ error: 'Contato não encontrado' });
+        return;
+      }
+
+      const updated = await prisma.person.update({
+        where: { id: person.id },
         data: {
           name,
           notes,
@@ -237,6 +262,7 @@ export class PersonsController {
       if (optOut !== undefined) {
         await prisma.consentHistory.create({
           data: {
+            organizationId,
             personId: person.id,
             status: optOut ? 'OPTED_OUT' : 'OPTED_IN',
             reason: 'Alteração manual no cadastro do CRM',
@@ -245,7 +271,7 @@ export class PersonsController {
         });
       }
 
-      res.json(person);
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -2,6 +2,7 @@ import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { SpreadsheetParser, ParsedAttendeeResult } from '../../infrastructure/parsers/spreadsheet.parser.js';
 
 export interface ImportAttendanceDTO {
+  organizationId: string;
   eventId: string;
   fileBuffer: Buffer;
   filename?: string;
@@ -20,12 +21,15 @@ export interface ImportAttendanceResult {
 
 export class ImportAttendanceUseCase {
   async execute(dto: ImportAttendanceDTO): Promise<ImportAttendanceResult> {
-    const event = await prisma.event.findUnique({
-      where: { id: dto.eventId }
+    const event = await prisma.event.findFirst({
+      where: {
+        id: dto.eventId,
+        organizationId: dto.organizationId
+      }
     });
 
     if (!event) {
-      throw new Error(`Evento com ID ${dto.eventId} não encontrado`);
+      throw new Error(`Evento com ID ${dto.eventId} não encontrado na sua organização`);
     }
 
     const parsed = SpreadsheetParser.parseBuffer(dto.fileBuffer, dto.filename);
@@ -35,15 +39,21 @@ export class ImportAttendanceUseCase {
     let absentCount = 0;
 
     for (const row of parsed.validRows) {
-      // 1. Upsert da Pessoa (mantém o optOut e consentStatus prévios se já existirem)
+      // 1. Upsert da Pessoa isolada por Tenant (telefone único por organização)
       const person = await prisma.person.upsert({
-        where: { normalizedPhone: row.normalizedPhone },
+        where: {
+          organizationId_normalizedPhone: {
+            organizationId: dto.organizationId,
+            normalizedPhone: row.normalizedPhone
+          }
+        },
         update: {
           name: row.name,
           phone: row.rawPhone,
           notes: row.notes || undefined
         },
         create: {
+          organizationId: dto.organizationId,
           name: row.name,
           phone: row.rawPhone,
           normalizedPhone: row.normalizedPhone,
@@ -54,12 +64,13 @@ export class ImportAttendanceUseCase {
         }
       });
 
-      // 2. Upsert da Presença no Evento (com status explícito e universo convidado)
+      // 2. Upsert da Presença no Evento
       const attendanceStatus = row.attended ? 'ATTENDED' : 'ABSENT';
 
       await prisma.attendance.upsert({
         where: {
-          personId_eventId: {
+          organizationId_personId_eventId: {
+            organizationId: dto.organizationId,
             personId: person.id,
             eventId: event.id
           }
@@ -71,6 +82,7 @@ export class ImportAttendanceUseCase {
           notes: row.notes || undefined
         },
         create: {
+          organizationId: dto.organizationId,
           personId: person.id,
           eventId: event.id,
           invited: true,
@@ -90,7 +102,7 @@ export class ImportAttendanceUseCase {
       }
     }
 
-    // 3. Atualiza os contadores agregados no Evento (Single Source of Truth)
+    // 3. Atualiza os contadores agregados no Evento
     await prisma.event.update({
       where: { id: event.id },
       data: {
@@ -103,6 +115,7 @@ export class ImportAttendanceUseCase {
     // 4. Log de Auditoria
     await prisma.auditLog.create({
       data: {
+        organizationId: dto.organizationId,
         action: 'ATTENDANCE_IMPORTED',
         entityType: 'Event',
         entityId: event.id,

@@ -9,7 +9,12 @@ import { CompositeAIService } from '../src/infrastructure/ai/composite-ai.servic
 import { RuleBasedFallbackProvider } from '../src/infrastructure/ai/rule-based-fallback.provider.js';
 import { ConversationsController } from '../src/presentation/controllers/conversations.controller.js';
 
-describe('Suíte Completa de Validação de Domínio, IA e Cenários E2E (A a H + Regressão Canônica)', () => {
+const isPostgresConfigured = Boolean(
+  process.env.DATABASE_URL &&
+  (process.env.DATABASE_URL.startsWith('postgresql://') || process.env.DATABASE_URL.startsWith('postgres://'))
+);
+
+describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domínio, IA e Cenários E2E (A a H + Regressão Canônica)', () => {
   let mockWhatsApp: MockWhatsAppProvider;
   let compositeAI: CompositeAIService;
   let importUseCase: ImportAttendanceUseCase;

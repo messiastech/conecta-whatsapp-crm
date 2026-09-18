@@ -4,12 +4,14 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { toNodeHandler } from 'better-auth/node';
 
 import { createApiRouter } from './routes/api.routes.js';
 import { IWhatsAppProvider } from '../domain/ports/whatsapp-provider.port.js';
 import { MockWhatsAppProvider } from '../infrastructure/whatsapp/mock-whatsapp.provider.js';
 import { MetaWhatsAppProvider } from '../infrastructure/whatsapp/meta-whatsapp.provider.js';
 import { CompositeAIService } from '../infrastructure/ai/composite-ai.service.js';
+import { auth } from '../infrastructure/auth/auth.config.js';
 
 dotenv.config();
 
@@ -19,10 +21,35 @@ const __dirname = path.dirname(__filename);
 export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppProvider } {
   const app = express();
 
-  // Configuração de CORS aberta para o painel em desenvolvimento
-  app.use(cors({ origin: '*' }));
+  // Configuração rigorosa de CORS e Segurança para SaaS
+  const rawOrigins = process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173';
+  const allowedOrigins = rawOrigins.split(',').map(s => s.trim());
 
-  // Middleware para capturar o rawBody buffer necessário para validação HMAC-SHA256
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Permite requisições sem origin (como mobile apps, curl, webhooks da Meta)
+        if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+          callback(null, true);
+        } else {
+          callback(new Error(`Origem [${origin}] não permitida pela política de CORS`));
+        }
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-organization-id', 'x-hub-signature-256']
+    })
+  );
+
+  // Headers de proteção HTTP básica
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+
+  // Middleware para capturar o rawBody buffer necessário para validação HMAC-SHA256 da Meta
   app.use(
     express.json({
       verify: (req: any, _res, buf) => {
@@ -32,7 +59,10 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
   );
   app.use(express.urlencoded({ extended: true }));
 
-  // Escolha do Provedor de WhatsApp via variável de ambiente
+  // Rotas de Autenticação do Better Auth (/api/auth/*)
+  app.all('/api/auth/*', toNodeHandler(auth));
+
+  // Escolha do Provedor Padrão de WhatsApp (Mock ou Meta)
   const providerType = process.env.WHATSAPP_PROVIDER || 'mock';
   let whatsappProvider: IWhatsAppProvider;
 
@@ -44,13 +74,13 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
       appSecret: process.env.META_APP_SECRET || '',
       webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || 'conecta_webhook_token_secret_2026'
     });
-    console.log('[WhatsApp CRM] Provedor Oficial WhatsApp Cloud API ativado');
+    console.log('[WhatsApp CRM] Provedor Oficial WhatsApp Cloud API ativado como fallback global');
   } else {
     whatsappProvider = MockWhatsAppProvider.getInstance();
-    console.log('[WhatsApp CRM] Provedor Mock Sandbox ativado (Modo de Desenvolvimento & Demonstração)');
+    console.log('[WhatsApp CRM] Provedor Mock Sandbox ativado');
   }
 
-  // Inicializa o Serviço de IA em cascata (Gemini -> Fallback Heurístico Local)
+  // Inicializa o Serviço de IA em cascata
   const aiService = new CompositeAIService();
 
   // Registra as rotas da API REST
@@ -61,6 +91,8 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
     res.json({
       status: 'OK',
       timestamp: new Date().toISOString(),
+      auth: 'Better Auth (Active)',
+      multiTenancy: 'Enabled (PostgreSQL)',
       provider: providerType,
       ai: process.env.GEMINI_API_KEY ? 'Gemini (Cloud)' : 'Rule-Based Fallback (Local)'
     });
@@ -77,23 +109,18 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
       res.sendFile(path.join(clientDistPath, 'index.html'));
     });
   } else {
-    // Fallback amigável enquanto o frontend estiver rodando via Vite dev server
     app.get('/', (_req: Request, res: Response) => {
       res.send(`
         <html>
-          <head><title>Conecta WhatsApp CRM - API</title></head>
+          <head><title>Conecta WhatsApp CRM - API SaaS</title></head>
           <body style="font-family: sans-serif; padding: 40px; line-height: 1.6; max-width: 700px; margin: 0 auto;">
-            <h2>🚀 Conecta WhatsApp CRM - Servidor Ativo</h2>
-            <p>A API REST e o motor de Webhook estão operando com sucesso.</p>
+            <h2>🚀 Conecta WhatsApp CRM - SaaS Ativo</h2>
+            <p>A API REST, Autenticação e Multi-Tenancy estão operando com sucesso.</p>
             <ul>
               <li><strong>Health Check:</strong> <a href="/health">/health</a></li>
-              <li><strong>Dashboard Metrics:</strong> <a href="/api/metrics/dashboard">/api/metrics/dashboard</a></li>
-              <li><strong>Eventos:</strong> <a href="/api/events">/api/events</a></li>
-              <li><strong>Pessoas:</strong> <a href="/api/persons">/api/persons</a></li>
-              <li><strong>Conversas:</strong> <a href="/api/conversations">/api/conversations</a></li>
-              <li><strong>Sandbox History:</strong> <a href="/api/sandbox/history">/api/sandbox/history</a></li>
+              <li><strong>Auth API:</strong> <code>/api/auth</code></li>
+              <li><strong>Dashboard Metrics:</strong> <code>/api/metrics/dashboard</code></li>
             </ul>
-            <p>Para abrir a interface visual completa do painel administrativo, acesse o cliente web em <code>http://localhost:3000</code> ou inicie com <code>npm run dev</code>.</p>
           </body>
         </html>
       `);
@@ -109,10 +136,10 @@ if (process.env.NODE_ENV !== 'test') {
   const { app } = buildApp();
   app.listen(PORT, () => {
     console.log(`\n======================================================`);
-    console.log(`  🌟 CONECTA WHATSAPP CRM - SERVIDOR INICIADO`);
+    console.log(`  🌟 CONECTA WHATSAPP CRM - SAAS MULTI-TENANT INICIADO`);
     console.log(`  🔗 URL: http://localhost:${PORT}`);
     console.log(`  📡 Webhook Endpoint: http://localhost:${PORT}/api/webhooks/whatsapp`);
-    console.log(`  📱 Sandbox Stream: http://localhost:${PORT}/api/sandbox/events`);
+    console.log(`  🔐 Auth Endpoint: http://localhost:${PORT}/api/auth`);
     console.log(`======================================================\n`);
   });
 }

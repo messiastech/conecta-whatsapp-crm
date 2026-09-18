@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar.js';
 import { DashboardView } from './components/DashboardView.js';
 import { EventsView } from './components/EventsView.js';
@@ -6,11 +6,29 @@ import { CampaignsView } from './components/CampaignsView.js';
 import { ConversationsView } from './components/ConversationsView.js';
 import { TasksView } from './components/TasksView.js';
 import { PersonsView } from './components/PersonsView.js';
+import { SettingsView } from './components/SettingsView.js';
 import { SandboxPhoneSimulator } from './components/SandboxPhoneSimulator.js';
+import { LoginView } from './components/LoginView.js';
 import { api } from './services/api.js';
-import { DashboardMetrics, EventItem, CampaignItem, ConversationItem, PersonItem } from './types.js';
+import {
+  DashboardMetrics,
+  EventItem,
+  CampaignItem,
+  ConversationItem,
+  PersonItem,
+  AuthUser,
+  OrganizationItem
+} from './types.js';
+import { Sparkles } from 'lucide-react';
 
 export const App: React.FC = () => {
+  // Auth & Multi-Tenancy States
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState<boolean>(true);
+  const [organizations, setOrganizations] = useState<OrganizationItem[]>([]);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+
+  // CRM Data States
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -19,7 +37,9 @@ export const App: React.FC = () => {
   const [persons, setPersons] = useState<PersonItem[]>([]);
   const [campaignPreselectedEventId, setCampaignPreselectedEventId] = useState<string | null>(null);
 
-  const loadAllData = async () => {
+  // Load CRM data for active tenant
+  const loadAllData = useCallback(async () => {
+    if (!user || !activeOrgId) return;
     try {
       const [m, evs, camps, convs, pers] = await Promise.all([
         api.getMetrics().catch(() => null),
@@ -37,27 +57,141 @@ export const App: React.FC = () => {
     } catch (err) {
       console.error('Erro ao carregar dados do CRM:', err);
     }
+  }, [user, activeOrgId]);
+
+  // Check existing session on boot
+  useEffect(() => {
+    const initAuth = async () => {
+      setLoadingAuth(true);
+      try {
+        const session = await api.getSession();
+        if (session && session.user) {
+          setUser(session.user);
+          // Load organizations for user
+          const orgs = await api.getMyOrganizations();
+          setOrganizations(orgs);
+          if (orgs.length > 0) {
+            const savedOrgId = api.getActiveOrganization();
+            const validSavedOrg = orgs.find(o => o.id === savedOrgId);
+            const targetOrgId = validSavedOrg ? validSavedOrg.id : orgs[0].id;
+            api.setActiveOrganization(targetOrgId);
+            setActiveOrgId(targetOrgId);
+          }
+        }
+      } catch (err) {
+        console.error('Falha ao verificar sessão:', err);
+        setUser(null);
+      } finally {
+        setLoadingAuth(false);
+      }
+    };
+
+    initAuth();
+  }, []);
+
+  // Refresh data whenever active organization changes
+  useEffect(() => {
+    if (user && activeOrgId) {
+      loadAllData();
+      const interval = setInterval(loadAllData, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [user, activeOrgId, loadAllData]);
+
+  // Handle successful login or register
+  const handleAuthSuccess = async (authUser: AuthUser) => {
+    setUser(authUser);
+    try {
+      const orgs = await api.getMyOrganizations();
+      setOrganizations(orgs);
+      if (orgs.length > 0) {
+        const targetOrgId = orgs[0].id;
+        api.setActiveOrganization(targetOrgId);
+        setActiveOrgId(targetOrgId);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar organizações pós-login:', err);
+    }
   };
 
-  useEffect(() => {
-    loadAllData();
-    const interval = setInterval(loadAllData, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch (err) {
+      console.error('Erro ao encerrar sessão:', err);
+    } finally {
+      setUser(null);
+      setOrganizations([]);
+      setActiveOrgId(null);
+      setMetrics(null);
+      setEvents([]);
+      setCampaigns([]);
+      setConversations([]);
+      setPersons([]);
+      setCurrentTab('dashboard');
+    }
+  };
+
+  // Switch active organization
+  const handleSelectOrg = (orgId: string) => {
+    api.setActiveOrganization(orgId);
+    setActiveOrgId(orgId);
+  };
+
+  // Create new organization
+  const handleCreateOrg = async (name: string) => {
+    const newOrg = await api.createOrganization(name);
+    const updatedOrgs = [...organizations, newOrg];
+    setOrganizations(updatedOrgs);
+    handleSelectOrg(newOrg.id);
+  };
 
   const handleSelectCampaignEvent = (eventId: string) => {
     setCampaignPreselectedEventId(eventId);
     setCurrentTab('campaigns');
   };
 
+  // Loading Screen
+  if (loadingAuth) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <span className="text-xl font-bold tracking-tight">Conecta WhatsApp CRM</span>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+          <span>Carregando sessão segura...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Not logged in -> Show Auth View
+  if (!user) {
+    return <LoginView onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  // Active Organization Display Name
+  const activeOrg = organizations.find(o => o.id === activeOrgId);
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Sidebar */}
+      {/* Sidebar with Multi-Tenant Workspace Selector */}
       <Sidebar
         currentTab={currentTab}
         onTabChange={setCurrentTab}
         pendingAttentionCount={metrics?.pendingAttentionCount || 0}
         pendingTasksCount={metrics?.pendingFollowUpsCount || 0}
+        organizations={organizations}
+        activeOrgId={activeOrgId}
+        onSelectOrg={handleSelectOrg}
+        onCreateOrg={handleCreateOrg}
+        user={user}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -65,7 +199,9 @@ export const App: React.FC = () => {
         {/* Top App Header */}
         <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0 shadow-xs">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Módulo Atual /</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              {activeOrg ? activeOrg.name : 'Workspace'} /
+            </span>
             <span className="text-sm font-bold text-slate-900 capitalize">
               {currentTab === 'dashboard' && 'Dashboard de Engajamento & Presença'}
               {currentTab === 'events' && 'Gestão de Eventos e Presença'}
@@ -73,6 +209,7 @@ export const App: React.FC = () => {
               {currentTab === 'conversations' && 'Central de Conversas & Triagem Inteligente'}
               {currentTab === 'tasks' && 'Acompanhamentos Pastorais & Tarefas'}
               {currentTab === 'persons' && 'Base de Pessoas & Linha do Tempo (CRM)'}
+              {currentTab === 'settings' && 'Configurações do Workspace & Integrações'}
               {currentTab === 'sandbox' && 'Emulador Sandbox WhatsApp'}
             </span>
           </div>
@@ -129,6 +266,10 @@ export const App: React.FC = () => {
               persons={persons}
               onRefresh={loadAllData}
             />
+          )}
+
+          {currentTab === 'settings' && (
+            <SettingsView />
           )}
 
           {currentTab === 'sandbox' && (

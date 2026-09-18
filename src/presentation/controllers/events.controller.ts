@@ -5,9 +5,11 @@ import { ImportAttendanceUseCase } from '../../application/use-cases/import-atte
 export class EventsController {
   private importUseCase = new ImportAttendanceUseCase();
 
-  async list(_req: Request, res: Response): Promise<void> {
+  async list(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const events = await prisma.event.findMany({
+        where: { organizationId },
         include: {
           _count: {
             select: {
@@ -26,9 +28,10 @@ export class EventsController {
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
-      const event = await prisma.event.findUnique({
-        where: { id },
+      const event = await prisma.event.findFirst({
+        where: { id, organizationId },
         include: {
           attendances: {
             include: {
@@ -61,29 +64,22 @@ export class EventsController {
 
   async create(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const { name, description, eventDate, location } = req.body;
 
       if (!name || !eventDate) {
-        res.status(400).json({ error: 'Nome e data do evento são obrigatórios' });
+        res.status(400).json({ error: 'Nome e Data do evento são obrigatórios' });
         return;
       }
 
       const event = await prisma.event.create({
         data: {
+          organizationId,
           name,
           description,
           eventDate: new Date(eventDate),
           location,
-          status: 'COMPLETED'
-        }
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          action: 'EVENT_CREATED',
-          entityType: 'Event',
-          entityId: event.id,
-          details: JSON.stringify({ name, eventDate })
+          status: 'DRAFT'
         }
       });
 
@@ -95,23 +91,25 @@ export class EventsController {
 
   async importSpreadsheet(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId!;
       const id = String(req.params.id);
       const file = req.file;
 
       if (!file) {
-        res.status(400).json({ error: 'Arquivo de planilha (.csv ou .xlsx) não enviado' });
+        res.status(400).json({ error: 'Arquivo de planilha (.csv ou .xlsx) é obrigatório' });
         return;
       }
 
       const result = await this.importUseCase.execute({
+        organizationId,
         eventId: id,
         fileBuffer: file.buffer,
         filename: file.originalname
       });
 
-      res.json(result);
+      res.status(200).json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(400).json({ error: err.message });
     }
   }
 }
