@@ -87,6 +87,7 @@ model Organization {
   invitations        Invitation[]
   settings           OrganizationSettings?
   whatsAppConnection WhatsAppConnection?
+  gpnConnection      GpnConnection?
 
   persons            Person[]
   events             Event[]
@@ -98,6 +99,7 @@ model Organization {
   followUpTasks      FollowUpTask[]
   consentHistories   ConsentHistory[]
   auditLogs          AuditLog[]
+  gpnWebhookEvents   GpnWebhookEvent[]
 }
 
 model Member {
@@ -414,4 +416,36 @@ model AuditLog {
   @@index([organizationId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ==========================================
+// 6. GPN CORE GATEWAY INTEGRATION
+// ==========================================
+
+model GpnConnection {
+  id                     String       @id @default(uuid())
+  organizationId         String       @unique
+  apiUrl                 String       @default("http://localhost:3000") // URL base do GPN Core Gateway
+  sessionId              String       @default("default")
+  encryptedApiKey        String       // API Key para auth no GPN (AES-256-GCM)
+  encryptedWebhookSecret String?      // Segredo para validação HMAC-SHA256 de webhooks recebidos
+  isActive               Boolean      @default(true)
+  status                 String       @default("DISCONNECTED") // DISCONNECTED, CONNECTED, ERROR, UNKNOWN
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model GpnWebhookEvent {
+  id             String       @id @default(uuid())
+  organizationId String
+  eventId        String       // x-gpn-event-id do GPN Core Gateway
+  eventType      String       // message.inbound, message.ack, session.status
+  processedAt    DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventId])
+  @@index([organizationId])
 }

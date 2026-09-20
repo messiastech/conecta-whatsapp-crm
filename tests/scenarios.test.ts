@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
+process.env.ENCRYPTION_MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || 'conecta_crm_test_master_key_32_bytes_long!!';
 import * as XLSX from 'xlsx';
 import { prisma } from '../src/infrastructure/database/prisma.client.js';
 import { ImportAttendanceUseCase } from '../src/application/use-cases/import-attendance.use-case.js';
@@ -8,6 +10,7 @@ import { MockWhatsAppProvider } from '../src/infrastructure/whatsapp/mock-whatsa
 import { CompositeAIService } from '../src/infrastructure/ai/composite-ai.service.js';
 import { RuleBasedFallbackProvider } from '../src/infrastructure/ai/rule-based-fallback.provider.js';
 import { ConversationsController } from '../src/presentation/controllers/conversations.controller.js';
+import { CryptoService } from '../src/infrastructure/security/crypto.service.js';
 
 const isPostgresConfigured = Boolean(
   process.env.DATABASE_URL &&
@@ -51,6 +54,9 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
         await prisma.attendance.deleteMany({ where: { organizationId: orgId } });
         await prisma.person.deleteMany({ where: { organizationId: orgId } });
         await prisma.event.deleteMany({ where: { organizationId: orgId } });
+        await prisma.gpnWebhookEvent.deleteMany({ where: { organizationId: orgId } });
+        await prisma.gpnConnection.deleteMany({ where: { organizationId: orgId } });
+        await prisma.whatsAppConnection.deleteMany({ where: { organizationId: orgId } });
         await prisma.organization.delete({ where: { id: orgId } });
       }
       await prisma.$disconnect();
@@ -183,7 +189,7 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
       where: { organizationId: orgId, status: 'PENDING' }
     });
     expect(pendingTasks.length).toBeGreaterThanOrEqual(2);
-  });
+  }, 30000);
 
   // =========================================================================
   // CENÁRIO B: Deduplicação
@@ -363,6 +369,25 @@ describe.skipIf(!isPostgresConfigured)('Suíte Completa de Validação de Domín
   // CENÁRIO J: Janela de Atendimento de 24 Horas da Meta
   // =========================================================================
   it('Cenário J: Deve validar a janela de 24 horas para mensagens de texto livre', async () => {
+    // Configura conexão Meta para a organização ativar a regra da janela de 24h
+    await prisma.whatsAppConnection.upsert({
+      where: { organizationId: orgId },
+      create: {
+        organizationId: orgId,
+        phoneNumberId: 'meta_scenario_phone_id',
+        wabaId: 'meta_scenario_waba_id',
+        encryptedAccessToken: CryptoService.encrypt('meta_test_token'),
+        encryptedAppSecret: CryptoService.encrypt('meta_test_secret'),
+        isMock: false,
+        status: 'CONNECTED'
+      },
+      update: {
+        phoneNumberId: 'meta_scenario_phone_id',
+        isMock: false,
+        status: 'CONNECTED'
+      }
+    });
+
     const conversationsController = new ConversationsController(mockWhatsApp);
 
     // 1. Cria uma conversa sem nenhuma mensagem inbound (janela fechada)

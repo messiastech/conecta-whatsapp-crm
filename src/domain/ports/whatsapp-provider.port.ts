@@ -2,7 +2,7 @@ export interface WhatsAppSendResult {
   success: boolean;
   messageId: string;
   recipientPhone: string;
-  provider: 'MOCK' | 'META_CLOUD_API';
+  provider: 'MOCK' | 'META_CLOUD_API' | 'GPN';
   status: 'SENT' | 'FAILED';
   timestamp: Date;
   errorMessage?: string;

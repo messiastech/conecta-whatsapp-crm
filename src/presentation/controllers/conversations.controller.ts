@@ -91,27 +91,33 @@ export class ConversationsController {
       const person = conversation.person;
 
       // Validação da Janela de Atendimento de 24 horas (Regra Oficial da Meta Cloud API)
-      const lastInboundMessage = await prisma.message.findFirst({
-        where: {
-          conversationId: id,
-          organizationId,
-          direction: 'INBOUND'
-        },
-        orderBy: { createdAt: 'desc' }
-      });
+      // Aplica-se SOMENTE quando o provedor ativo da organização é META Cloud API.
+      // GPN (Baileys) e Mock não possuem essa restrição.
+      const providerType = await WhatsAppProviderFactory.getProviderType(organizationId);
 
-      const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-      const isWindowOpen =
-        lastInboundMessage &&
-        Date.now() - new Date(lastInboundMessage.createdAt).getTime() <= TWENTY_FOUR_HOURS_MS;
-
-      if (!isWindowOpen) {
-        res.status(422).json({
-          error: 'JANELA_24H_EXPIRADA',
-          message:
-            'A janela de atendimento de 24 horas da Meta está fechada. Mensagens de texto livre só podem ser enviadas dentro de 24 horas após a última resposta do contato. Para reengajar após esse período, utilize um Template oficial aprovado pela Meta.'
+      if (providerType === 'META') {
+        const lastInboundMessage = await prisma.message.findFirst({
+          where: {
+            conversationId: id,
+            organizationId,
+            direction: 'INBOUND'
+          },
+          orderBy: { createdAt: 'desc' }
         });
-        return;
+
+        const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+        const isWindowOpen =
+          lastInboundMessage &&
+          Date.now() - new Date(lastInboundMessage.createdAt).getTime() <= TWENTY_FOUR_HOURS_MS;
+
+        if (!isWindowOpen) {
+          res.status(422).json({
+            error: 'JANELA_24H_EXPIRADA',
+            message:
+              'A janela de atendimento de 24 horas da Meta está fechada. Mensagens de texto livre só podem ser enviadas dentro de 24 horas após a última resposta do contato. Para reengajar após esse período, utilize um Template oficial aprovado pela Meta.'
+          });
+          return;
+        }
       }
 
       const provider = await WhatsAppProviderFactory.getProviderForOrganization(organizationId);

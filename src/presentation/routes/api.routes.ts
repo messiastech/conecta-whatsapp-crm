@@ -10,6 +10,7 @@ import { MetricsController } from '../controllers/metrics.controller.js';
 import { SandboxController } from '../controllers/sandbox.controller.js';
 import { TasksController } from '../controllers/tasks.controller.js';
 import { OrganizationController } from '../controllers/organization.controller.js';
+import { GpnWebhooksController } from '../controllers/gpn-webhooks.controller.js';
 
 import { requireAuth, requireOrganization, requireRole } from '../middlewares/auth.middleware.js';
 import { IWhatsAppProvider } from '../../domain/ports/whatsapp-provider.port.js';
@@ -106,6 +107,10 @@ export function createApiRouter(
   // --- Webhooks Oficiais do WhatsApp (Públicos + Multi-Tenant via HMAC) ---
   router.get('/webhooks/whatsapp', (req, res) => webhooksController.verify(req, res));
   router.post('/webhooks/whatsapp', (req, res) => webhooksController.handle(req, res));
+
+  // --- Webhooks do GPN Core Gateway (Público + Multi-Tenant via HMAC GPN) ---
+  const gpnWebhooksController = new GpnWebhooksController(aiService);
+  router.post('/webhooks/gpn', (req, res) => gpnWebhooksController.handle(req, res));
 
   // --- Rotas do Simulador Sandbox (Protegidas por Auth, Tenant e RBAC) ---
   router.get('/sandbox/events', requireAuth, requireOrganization, (req, res) => sandboxController.streamEvents(req, res));
