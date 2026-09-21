@@ -12,6 +12,7 @@ import { MockWhatsAppProvider } from '../infrastructure/whatsapp/mock-whatsapp.p
 import { MetaWhatsAppProvider } from '../infrastructure/whatsapp/meta-whatsapp.provider.js';
 import { CompositeAIService } from '../infrastructure/ai/composite-ai.service.js';
 import { auth } from '../infrastructure/auth/auth.config.js';
+import { prisma } from '../infrastructure/database/prisma.client.js';
 
 dotenv.config();
 
@@ -32,6 +33,11 @@ export function validateProductionEnvironment(): void {
       missing.push('BETTER_AUTH_SECRET (obrigatório, mínimo 32 caracteres em produção)');
     }
 
+    const authUrl = process.env.BETTER_AUTH_URL;
+    if (!authUrl || (!authUrl.startsWith('http://') && !authUrl.startsWith('https://'))) {
+      missing.push('BETTER_AUTH_URL (obrigatório em produção, ex: https://yeshua-demo.onrender.com)');
+    }
+
     const masterKey = process.env.ENCRYPTION_MASTER_KEY;
     if (!masterKey || masterKey.length < 32) {
       missing.push('ENCRYPTION_MASTER_KEY (obrigatório, mínimo 32 caracteres para AES-256-GCM)');
@@ -39,6 +45,15 @@ export function validateProductionEnvironment(): void {
 
     if (process.env.WHATSAPP_PROVIDER === 'meta' && !process.env.META_WEBHOOK_VERIFY_TOKEN) {
       missing.push('META_WEBHOOK_VERIFY_TOKEN (obrigatório em produção quando WHATSAPP_PROVIDER=meta)');
+    }
+
+    if (process.env.VERTICAL_PROFILE === 'ACCOUNTING') {
+      if (!process.env.YESHUA_DEMO_EMAIL) {
+        missing.push('YESHUA_DEMO_EMAIL (obrigatório para demo contábil Yeshua em produção)');
+      }
+      if (!process.env.YESHUA_DEMO_PASSWORD) {
+        missing.push('YESHUA_DEMO_PASSWORD (obrigatório para demo contábil Yeshua em produção)');
+      }
     }
 
     if (missing.length > 0) {
@@ -123,11 +138,28 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
   // Registra as rotas da API REST
   app.use('/api', createApiRouter(whatsappProvider, aiService));
 
-  // Rota de Health Check
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({
-      status: 'OK',
+  // Rota de Health Check e Observabilidade
+  app.get('/health', async (_req: Request, res: Response) => {
+    let dbStatus = 'connected';
+    try {
+      await Promise.race([
+        prisma.$queryRaw`SELECT 1`,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+      ]);
+    } catch {
+      dbStatus = 'unreachable';
+    }
+
+    const isHealthy = dbStatus === 'connected';
+
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'OK' : 'DEGRADED',
+      uptime: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
+      verticalProfile: process.env.VERTICAL_PROFILE || 'DEFAULT',
+      database: {
+        status: dbStatus
+      },
       auth: 'Better Auth (Active)',
       multiTenancy: 'Enabled (PostgreSQL)',
       provider: providerType,

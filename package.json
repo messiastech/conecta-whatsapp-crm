@@ -20,7 +20,8 @@
     "seed:yeshua-demo:prod": "node dist/infrastructure/database/seed-yeshua-demo.js",
     "release:yeshua": "prisma generate && prisma db push && npm run seed:yeshua-demo",
     "start:yeshua-release": "prisma generate && prisma db push && npm run seed:yeshua-demo && npm start",
-    "test:smoke:yeshua": "tsx tests/smoke-yeshua-e2e.ts"
+    "test:smoke:yeshua": "tsx tests/smoke-yeshua-e2e.ts",
+    "verify:cloud": "tsx scripts/verify-cloud-readiness.ts"
   },
   "keywords": [
     "whatsapp",
