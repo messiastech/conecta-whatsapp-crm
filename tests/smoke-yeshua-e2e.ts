@@ -4,6 +4,7 @@
  * Execução: npx tsx tests/smoke-yeshua-e2e.ts
  */
 
+import 'dotenv/config';
 process.env.NODE_ENV = 'test';
 import http from 'http';
 import { AddressInfo } from 'net';
@@ -138,8 +139,8 @@ async function runSmokeTests() {
   // PASSO 2: POST /api/auth/sign-in/email
   // ============================================================================
   await executeStep(2, 'POST /api/auth/sign-in/email — Autenticação do Usuário Demo Yeshua', async () => {
-    const demoEmail = 'demo@yeshuacontabilidade.com.br';
-    const demoPassword = 'demo';
+    const demoEmail = process.env.YESHUA_DEMO_EMAIL || 'demo@yeshuacontabilidade.com.br';
+    const demoPassword = process.env.YESHUA_DEMO_PASSWORD || 'demo';
 
     const res = await fetch(`${baseUrl}/api/auth/sign-in/email`, {
       method: 'POST',
