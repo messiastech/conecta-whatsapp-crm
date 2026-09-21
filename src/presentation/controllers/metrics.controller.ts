@@ -90,6 +90,23 @@ export class MetricsController {
         count: p._count.priority
       }));
 
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { metadata: true }
+      });
+
+      let verticalProfile = 'DEFAULT';
+      let brandName: string | undefined;
+      let brandSubtitle: string | undefined;
+      if (org?.metadata) {
+        try {
+          const meta = JSON.parse(org.metadata);
+          if (meta.verticalProfile) verticalProfile = meta.verticalProfile;
+          if (meta.brandName) brandName = meta.brandName;
+          if (meta.brandSubtitle) brandSubtitle = meta.brandSubtitle;
+        } catch {}
+      }
+
       res.json({
         totalPersons,
         totalEvents,
@@ -107,7 +124,10 @@ export class MetricsController {
         pendingFollowUpsCount,
         responseRate,
         categoryBreakdown: formattedCategories,
-        priorityBreakdown: formattedPriorities
+        priorityBreakdown: formattedPriorities,
+        verticalProfile,
+        brandName,
+        brandSubtitle
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

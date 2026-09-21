@@ -15,7 +15,8 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
-    "seed": "tsx src/infrastructure/database/seed.ts"
+    "seed": "tsx src/infrastructure/database/seed.ts",
+    "seed:yeshua-demo": "tsx src/infrastructure/database/seed-yeshua-demo.ts"
   },
   "keywords": [
     "whatsapp",

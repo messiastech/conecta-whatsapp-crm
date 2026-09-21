@@ -1,6 +1,7 @@
 import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { IAIService } from '../../domain/ports/ai-service.port.js';
 import { PhoneNumber } from '../../domain/value-objects/phone-number.vo.js';
+import { AccountingAIPolicy } from '../verticals/accounting/accounting-ai-policy.js';
 
 export interface ProcessInboundMessageDTO {
   organizationId: string;
@@ -240,13 +241,81 @@ export class ProcessInboundMessageUseCase {
       ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(lastAttendance.event.eventDate))
       : undefined;
 
-    // 6. Executa a análise inteligente com IA
-    const aiResult = await this.aiService.classifyAbsence(dto.text, {
-      personName: person.name,
-      eventName,
-      eventDate,
-      outboundMessageText: lastOutbound?.content
+    // 6. Detecta o verticalProfile do Tenant via Organization.metadata
+    const org = await prisma.organization.findUnique({
+      where: { id: dto.organizationId },
+      select: { metadata: true, name: true }
     });
+
+    let verticalProfile = 'DEFAULT';
+    if (org?.metadata) {
+      try {
+        const meta = JSON.parse(org.metadata);
+        if (meta.verticalProfile) verticalProfile = meta.verticalProfile;
+      } catch {}
+    }
+
+    let category: string;
+    let reason: string;
+    let intent: string;
+    let confidence: number;
+    let sentiment: string;
+    let urgency: string;
+    let priority: string;
+    let summary: string;
+    let requiresHumanAttention: boolean;
+    let suggestedReply: string | null;
+    let nextAction: string;
+    let modelUsed: string;
+    let rawResponse: string;
+    let taskTitle: string;
+    let taskDescription: string;
+
+    if (verticalProfile === 'ACCOUNTING') {
+      // Análise Contábil / Fiscal da Yeshua
+      const accResult = AccountingAIPolicy.analyze(dto.text, {
+        clientName: person.name,
+        companyName: org?.name
+      });
+      category = accResult.category;
+      reason = accResult.reasonSummary;
+      intent = accResult.intent;
+      confidence = accResult.confidenceScore;
+      sentiment = accResult.sentiment;
+      urgency = accResult.urgency;
+      priority = accResult.priority;
+      summary = accResult.reasonSummary;
+      requiresHumanAttention = accResult.requiresAttention;
+      suggestedReply = accResult.suggestedReply;
+      nextAction = accResult.nextAction;
+      modelUsed = 'YESHUA_ACCOUNTING_AI';
+      rawResponse = JSON.stringify(accResult);
+      taskTitle = `Pendência Contábil: ${person.name} (${accResult.categoryLabel})`;
+      taskDescription = `Assunto: ${accResult.reasonSummary}\nAção Contábil Recomendada: ${accResult.suggestedAction}`;
+    } else {
+      // Fluxo DEFAULT (Análise de Ausência Pastoral / Eventos)
+      const aiResult = await this.aiService.classifyAbsence(dto.text, {
+        personName: person.name,
+        eventName,
+        eventDate,
+        outboundMessageText: lastOutbound?.content
+      });
+      category = aiResult.category;
+      reason = aiResult.reason || aiResult.summary;
+      intent = aiResult.intent || 'JUSTIFY_ABSENCE';
+      confidence = aiResult.confidence;
+      sentiment = aiResult.sentiment;
+      urgency = aiResult.urgency || 'MEDIA';
+      priority = aiResult.priority || 'MEDIUM';
+      summary = aiResult.summary;
+      requiresHumanAttention = aiResult.requires_human_attention;
+      suggestedReply = aiResult.suggested_reply || null;
+      nextAction = aiResult.next_action || 'REQUIRE_HUMAN_APPROVAL';
+      modelUsed = aiResult.providerUsed;
+      rawResponse = JSON.stringify(aiResult);
+      taskTitle = `Acompanhamento Pastoral: ${person.name} (${aiResult.category})`;
+      taskDescription = `Motivo: ${aiResult.summary}\nPróxima ação recomendada: ${aiResult.next_action}`;
+    }
 
     // 7. Persiste a análise estruturada de IA com organizationId
     await prisma.aIAnalysis.create({
@@ -254,19 +323,19 @@ export class ProcessInboundMessageUseCase {
         organizationId: dto.organizationId,
         messageId: inboundMessage.id,
         conversationId: conversation.id,
-        category: aiResult.category,
-        reason: aiResult.reason || aiResult.summary,
-        intent: aiResult.intent || 'JUSTIFY_ABSENCE',
-        confidence: aiResult.confidence,
-        sentiment: aiResult.sentiment,
-        urgency: aiResult.urgency || 'MEDIA',
-        priority: aiResult.priority || 'MEDIUM',
-        summary: aiResult.summary,
-        requiresHumanAttention: aiResult.requires_human_attention,
-        suggestedReply: aiResult.suggested_reply || null,
-        nextAction: aiResult.next_action || 'REQUIRE_HUMAN_APPROVAL',
-        modelUsed: aiResult.providerUsed,
-        rawResponse: JSON.stringify(aiResult)
+        category,
+        reason,
+        intent,
+        confidence,
+        sentiment,
+        urgency,
+        priority,
+        summary,
+        requiresHumanAttention,
+        suggestedReply,
+        nextAction,
+        modelUsed,
+        rawResponse
       }
     });
 
@@ -276,23 +345,23 @@ export class ProcessInboundMessageUseCase {
       data: {
         lastMessageAt: new Date(),
         status: 'REPLIED',
-        category: aiResult.category,
-        priority: aiResult.priority || 'MEDIUM',
-        requiresHumanAttention: aiResult.requires_human_attention
+        category,
+        priority,
+        requiresHumanAttention
       }
     });
 
-    // 9. Criação Automática de Tarefa de Acompanhamento para casos críticos
+    // 9. Criação Automática de Tarefa / Pendência para casos que exigem atenção
     let followUpTaskId: string | undefined;
-    if (aiResult.requires_human_attention || aiResult.priority === 'HIGH' || aiResult.priority === 'URGENT') {
+    if (requiresHumanAttention || priority === 'HIGH' || priority === 'URGENT') {
       const task = await prisma.followUpTask.create({
         data: {
           organizationId: dto.organizationId,
           personId: person.id,
           conversationId: conversation.id,
-          title: `Acompanhamento Pastoral: ${person.name} (${aiResult.category})`,
-          description: `Motivo: ${aiResult.summary}\nPróxima ação recomendada: ${aiResult.next_action}`,
-          priority: aiResult.priority || 'HIGH',
+          title: taskTitle,
+          description: taskDescription,
+          priority,
           status: 'PENDING'
         }
       });
@@ -306,8 +375,8 @@ export class ProcessInboundMessageUseCase {
           entityId: task.id,
           details: JSON.stringify({
             person: person.name,
-            category: aiResult.category,
-            priority: aiResult.priority
+            category,
+            priority
           })
         }
       });
@@ -319,20 +388,20 @@ export class ProcessInboundMessageUseCase {
       personName: person.name,
       conversationId: conversation.id,
       isOptOut: false,
-      followUpTaskId,
       classification: {
-        category: aiResult.category,
-        intent: aiResult.intent || 'JUSTIFY_ABSENCE',
-        confidence: aiResult.confidence,
-        sentiment: aiResult.sentiment,
-        urgency: aiResult.urgency || 'MEDIA',
-        priority: aiResult.priority || 'MEDIUM',
-        summary: aiResult.summary,
-        requiresHumanAttention: aiResult.requires_human_attention,
-        suggestedReply: aiResult.suggested_reply,
-        nextAction: aiResult.next_action || 'REQUIRE_HUMAN_APPROVAL',
-        providerUsed: aiResult.providerUsed
-      }
+        category,
+        intent,
+        confidence,
+        sentiment,
+        urgency,
+        priority,
+        summary,
+        requiresHumanAttention,
+        suggestedReply: suggestedReply || undefined,
+        nextAction,
+        providerUsed: modelUsed
+      },
+      followUpTaskId
     };
   }
 }

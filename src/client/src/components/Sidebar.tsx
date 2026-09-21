@@ -39,59 +39,104 @@ export const Sidebar: React.FC<SidebarProps> = ({
   user,
   onLogout
 }) => {
-  const menuItems = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      badge: null
-    },
-    {
-      id: 'events',
-      label: 'Eventos & Presença',
-      icon: CalendarDays,
-      badge: null
-    },
-    {
-      id: 'campaigns',
-      label: 'Campanhas WhatsApp',
-      icon: Send,
-      badge: null
-    },
-    {
-      id: 'conversations',
-      label: 'Conversas & IA',
-      icon: MessageSquareText,
-      badge: pendingAttentionCount > 0 ? `${pendingAttentionCount} alertas` : null,
-      badgeColor: 'bg-rose-500 text-white'
-    },
-    {
-      id: 'tasks',
-      label: 'Acompanhamentos',
-      icon: ClipboardList,
-      badge: pendingTasksCount > 0 ? `${pendingTasksCount} pendentes` : null,
-      badgeColor: 'bg-amber-500 text-white'
-    },
-    {
-      id: 'persons',
-      label: 'Pessoas & CRM',
-      icon: Users,
-      badge: null
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: Settings,
-      badge: null
-    },
-    {
-      id: 'sandbox',
-      label: 'Simulador WhatsApp',
-      icon: Smartphone,
-      badge: 'Sandbox',
-      badgeColor: 'bg-emerald-100 text-emerald-800'
-    }
-  ];
+  const activeOrg = organizations.find(o => o.id === activeOrgId);
+  const isAccounting = activeOrg?.verticalProfile === 'ACCOUNTING';
+
+  const menuItems = isAccounting
+    ? [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: LayoutDashboard,
+          badge: null
+        },
+        {
+          id: 'persons',
+          label: 'Clientes',
+          icon: Users,
+          badge: null
+        },
+        {
+          id: 'conversations',
+          label: 'Atendimentos',
+          icon: MessageSquareText,
+          badge: pendingAttentionCount > 0 ? `${pendingAttentionCount} alertas` : null,
+          badgeColor: 'bg-rose-500 text-white'
+        },
+        {
+          id: 'tasks',
+          label: 'Pendências',
+          icon: ClipboardList,
+          badge: pendingTasksCount > 0 ? `${pendingTasksCount} pendentes` : null,
+          badgeColor: 'bg-amber-500 text-white'
+        },
+        {
+          id: 'settings',
+          label: 'Configurações',
+          icon: Settings,
+          badge: null
+        },
+        {
+          id: 'sandbox',
+          label: 'Simulador WhatsApp',
+          icon: Smartphone,
+          badge: 'Sandbox',
+          badgeColor: 'bg-emerald-100 text-emerald-800'
+        }
+      ]
+    : [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: LayoutDashboard,
+          badge: null
+        },
+        {
+          id: 'events',
+          label: 'Eventos & Presença',
+          icon: CalendarDays,
+          badge: null
+        },
+        {
+          id: 'campaigns',
+          label: 'Campanhas WhatsApp',
+          icon: Send,
+          badge: null
+        },
+        {
+          id: 'conversations',
+          label: 'Conversas & IA',
+          icon: MessageSquareText,
+          badge: pendingAttentionCount > 0 ? `${pendingAttentionCount} alertas` : null,
+          badgeColor: 'bg-rose-500 text-white'
+        },
+        {
+          id: 'tasks',
+          label: 'Acompanhamentos',
+          icon: ClipboardList,
+          badge: pendingTasksCount > 0 ? `${pendingTasksCount} pendentes` : null,
+          badgeColor: 'bg-amber-500 text-white'
+        },
+        {
+          id: 'persons',
+          label: 'Pessoas & CRM',
+          icon: Users,
+          badge: null
+        },
+        {
+          id: 'settings',
+          label: 'Configurações',
+          icon: Settings,
+          badge: null
+        },
+        {
+          id: 'sandbox',
+          label: 'Simulador WhatsApp',
+          icon: Smartphone,
+          badge: 'Sandbox',
+          badgeColor: 'bg-emerald-100 text-emerald-800'
+        }
+      ];
 
   const userInitials = user?.name
     ? user.name
@@ -107,12 +152,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex flex-col overflow-hidden">
         {/* Brand Header */}
         <div className="p-4 border-b border-slate-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30 shrink-0">
+          <div className={`w-9 h-9 rounded-xl ${isAccounting ? 'bg-gradient-to-br from-indigo-500 to-violet-700 shadow-indigo-900/40' : 'bg-gradient-to-br from-emerald-500 to-teal-700 shadow-emerald-900/30'} flex items-center justify-center text-white shadow-lg shrink-0`}>
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="overflow-hidden">
-            <h1 className="font-bold text-white tracking-wide text-sm leading-tight">Conecta CRM</h1>
-            <span className="text-[10px] font-medium text-emerald-400">SaaS Multi-Tenant</span>
+            <h1 className="font-bold text-white tracking-wide text-xs leading-tight truncate">
+              {isAccounting ? (activeOrg?.brandName || 'YESHUA AI CLIENT DESK') : 'Conecta CRM'}
+            </h1>
+            <span className={`text-[10px] font-medium ${isAccounting ? 'text-indigo-400' : 'text-emerald-400'} truncate block`}>
+              {isAccounting ? (activeOrg?.brandSubtitle || 'powered by MEGA CORE') : 'SaaS Multi-Tenant'}
+            </span>
           </div>
         </div>
 

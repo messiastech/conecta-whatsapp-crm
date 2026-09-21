@@ -202,23 +202,43 @@ export const App: React.FC = () => {
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
               {activeOrg ? activeOrg.name : 'Workspace'} /
             </span>
-            <span className="text-sm font-bold text-slate-900 capitalize">
-              {currentTab === 'dashboard' && 'Dashboard de Engajamento & Presença'}
-              {currentTab === 'events' && 'Gestão de Eventos e Presença'}
-              {currentTab === 'campaigns' && 'Campanhas Pós-Evento (WhatsApp)'}
-              {currentTab === 'conversations' && 'Central de Conversas & Triagem Inteligente'}
-              {currentTab === 'tasks' && 'Acompanhamentos Pastorais & Tarefas'}
-              {currentTab === 'persons' && 'Base de Pessoas & Linha do Tempo (CRM)'}
-              {currentTab === 'settings' && 'Configurações do Workspace & Integrações'}
-              {currentTab === 'sandbox' && 'Emulador Sandbox WhatsApp'}
+            <span className="text-sm font-bold text-slate-900">
+              {activeOrg?.verticalProfile === 'ACCOUNTING' ? (
+                <>
+                  {currentTab === 'dashboard' && 'Dashboard de Atendimento & Inteligência Contábil'}
+                  {currentTab === 'persons' && 'Clientes & Histórico Consultivo (CRM)'}
+                  {currentTab === 'conversations' && 'Atendimentos & Triagem Fiscal IA'}
+                  {currentTab === 'tasks' && 'Pendências & Ações Fiscais'}
+                  {currentTab === 'settings' && 'Configurações do Escritório & IA'}
+                  {currentTab === 'sandbox' && 'Emulador Sandbox WhatsApp (Yeshua Desk)'}
+                </>
+              ) : (
+                <>
+                  {currentTab === 'dashboard' && 'Dashboard de Engajamento & Presença'}
+                  {currentTab === 'events' && 'Gestão de Eventos e Presença'}
+                  {currentTab === 'campaigns' && 'Campanhas Pós-Evento (WhatsApp)'}
+                  {currentTab === 'conversations' && 'Central de Conversas & Triagem Inteligente'}
+                  {currentTab === 'tasks' && 'Acompanhamentos Pastorais & Tarefas'}
+                  {currentTab === 'persons' && 'Base de Pessoas & Linha do Tempo (CRM)'}
+                  {currentTab === 'settings' && 'Configurações do Workspace & Integrações'}
+                  {currentTab === 'sandbox' && 'Emulador Sandbox WhatsApp'}
+                </>
+              )}
             </span>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Modo Sandbox Ativo (Mock WhatsApp)</span>
-            </div>
+            {activeOrg?.verticalProfile === 'ACCOUNTING' ? (
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200 text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                <span>Yeshua AI Desk (Sandbox Ativo)</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Modo Sandbox Ativo (Mock WhatsApp)</span>
+              </div>
+            )}
           </div>
         </header>
 

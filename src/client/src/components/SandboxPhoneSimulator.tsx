@@ -11,6 +11,7 @@ import {
   CheckCheck
 } from 'lucide-react';
 import { api } from '../services/api.js';
+import { OrganizationSettingsItem } from '../types.js';
 
 interface SandboxLog {
   id: string;
@@ -28,11 +29,22 @@ export const SandboxPhoneSimulator: React.FC = () => {
   const [inputText, setInputText] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [lastPipelineResult, setLastPipelineResult] = useState<any | null>(null);
+  const [verticalProfile, setVerticalProfile] = useState<string>('DEFAULT');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Carrega histórico inicial e conecta ao stream SSE
   useEffect(() => {
+    api.getOrganizationSettings().then((st: OrganizationSettingsItem) => {
+      if (st?.organization?.verticalProfile) {
+        setVerticalProfile(st.organization.verticalProfile);
+        if (st.organization.verticalProfile === 'ACCOUNTING') {
+          setActivePhone('+5511981112233');
+          setContactName('Roberto Silveira (TechSolutions LTDA)');
+        }
+      }
+    }).catch(console.error);
+
     api.getSandboxHistory().then(hist => {
       if (hist && Array.isArray(hist)) setMessages(hist);
     }).catch(console.error);
@@ -65,13 +77,17 @@ export const SandboxPhoneSimulator: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSimulateReply = async (textToSend?: string) => {
+  const handleSimulateReply = async (textToSend?: string, customPhone?: string, customName?: string) => {
     const text = textToSend || inputText;
     if (!text.trim()) return;
 
+    if (customPhone) setActivePhone(customPhone);
+    if (customName) setContactName(customName);
+
     try {
       setLoading(true);
-      const res = await api.simulateReply(activePhone, text);
+      const phoneToUse = customPhone || activePhone;
+      const res = await api.simulateReply(phoneToUse, text);
       setLastPipelineResult(res.pipelineResult);
       if (!textToSend) setInputText('');
     } catch (err: any) {
@@ -81,38 +97,97 @@ export const SandboxPhoneSimulator: React.FC = () => {
     }
   };
 
-  const quickScenarios = [
-    {
-      title: 'Saúde / Doença',
-      text: 'Oi pastor! Não consegui ir porque minha filha teve febre alta e levei na UPA.',
-      badge: 'SAUDE'
-    },
-    {
-      title: 'Trabalho / Plantão',
-      text: 'Boa noite! Peguei escala de plantão extra no hospital e não chego a tempo.',
-      badge: 'TRABALHO'
-    },
-    {
-      title: 'Pedido de Oração (Crise)',
-      text: 'Pastor, estou passando por uma fase muito difícil com depressão e angústia. Por favor orem por mim.',
-      badge: 'PEDIDO_ATENDIMENTO'
-    },
-    {
-      title: 'Viagem em Família',
-      text: 'Olá! Estou em viagem de férias fora da cidade com a família, volto semana que vem!',
-      badge: 'VIAGEM'
-    },
-    {
-      title: 'Resposta Ambígua',
-      text: '👍 ok valeu',
-      badge: 'INCONCLUSIVO'
-    },
-    {
-      title: 'Descadastro LGPD (SAIR)',
-      text: 'SAIR',
-      badge: 'OPT_OUT'
-    }
-  ];
+  const isAccounting = verticalProfile === 'ACCOUNTING';
+
+  const quickScenarios = isAccounting
+    ? [
+        {
+          title: 'Simples / Reforma Tributária',
+          text: 'Olá equipe Yeshua! Nossa empresa de tecnologia é optante pelo Simples Nacional. Como fica nossa tributação com a transição do IBS/CBS da Reforma Tributária? Vamos perder benefícios fiscais?',
+          badge: 'REFORMA_TRIBUTARIA',
+          phone: '+5511981112233',
+          name: 'Roberto Silveira (TechSolutions LTDA)'
+        },
+        {
+          title: 'MEI / Limite de Faturamento',
+          text: 'Boa tarde! Fiz as contas do meu faturamento deste ano e ultrapassei os R$ 81.000,00 do MEI, fechando em R$ 98.000,00. Preciso desenquadrar agora para Microempresa? Como calcular a guia complementar?',
+          badge: 'MEI',
+          phone: '+5511982223344',
+          name: 'Carla Dias (CD Consultoria MEI)'
+        },
+        {
+          title: 'Nota Fiscal / Retenções',
+          text: 'Preciso emitir urgentemente uma NFS-e de R$ 45.000,00 para um cliente corporativo de outro município com retenção de ISS e CSRF (PIS/COFINS/CSLL), mas o sistema da Prefeitura está travando no código de serviço.',
+          badge: 'NOTA_FISCAL',
+          phone: '+5511983334455',
+          name: 'Marcos Vinicius (LogExpress Transportes)'
+        },
+        {
+          title: 'Igreja / Imunidade & CND',
+          text: 'A paz de Cristo! Nossa Comunidade da Fé precisa renovar a Certidão Negativa de Débitos (CND) na Receita Federal e protocolar a declaração de imunidade constitucional de templos. Quais documentos vocês precisam?',
+          badge: 'IMUNIDADE_TEMPLO',
+          phone: '+5511984445566',
+          name: 'Pr. Josué Mendes (Comunidade da Fé)'
+        },
+        {
+          title: 'Caso Complexo / Fiscalização',
+          text: 'Recebemos uma intimação da SEFAZ com prazo de 5 dias úteis alegando divergência de recolhimento de ICMS-ST e SPED Fiscal dos últimos 2 anos. O valor apontado é de R$ 140.000,00. Precisamos de defesa urgente!',
+          badge: 'CASO_COMPLEXO',
+          phone: '+5511985556677',
+          name: 'Dra. Helena Castro (BioFarma Distribuidora)'
+        },
+        {
+          title: 'Falar com Contador',
+          text: 'Olá! Gostaria de agendar uma reunião presencial com o contador responsável na Yeshua nesta semana. Estamos estruturando uma holding patrimonial familiar e abertura de filial.',
+          badge: 'FALAR_CONTADOR',
+          phone: '+5511986667788',
+          name: 'Fernando Guimarães (Grupo Aliança)'
+        }
+      ]
+    : [
+        {
+          title: 'Saúde / Doença',
+          text: 'Oi pastor! Não consegui ir porque minha filha teve febre alta e levei na UPA.',
+          badge: 'SAUDE',
+          phone: '+5511987654321',
+          name: 'Mariana Souza'
+        },
+        {
+          title: 'Trabalho / Plantão',
+          text: 'Boa noite! Peguei escala de plantão extra no hospital e não chego a tempo.',
+          badge: 'TRABALHO',
+          phone: '+5511981110006',
+          name: 'Rodrigo Lima'
+        },
+        {
+          title: 'Pedido de Oração (Crise)',
+          text: 'Pastor, estou passando por uma fase muito difícil com depressão e angústia. Por favor orem por mim.',
+          badge: 'PEDIDO_ATENDIMENTO',
+          phone: '+5511981110005',
+          name: 'Carlos Eduardo'
+        },
+        {
+          title: 'Viagem em Família',
+          text: 'Olá! Estou em viagem de férias fora da cidade com a família, volto semana que vem!',
+          badge: 'VIAGEM',
+          phone: '+5511981110002',
+          name: 'Beatriz Almeida'
+        },
+        {
+          title: 'Resposta Ambígua',
+          text: '👍 ok valeu',
+          badge: 'INCONCLUSIVO',
+          phone: '+5511981110008',
+          name: 'Paulo Ricardo'
+        },
+        {
+          title: 'Descadastro LGPD (SAIR)',
+          text: 'SAIR',
+          badge: 'OPT_OUT',
+          phone: '+5511981110009',
+          name: 'Carla Nogueira'
+        }
+      ];
 
   return (
     <div className="space-y-6">
@@ -167,7 +242,7 @@ export const SandboxPhoneSimulator: React.FC = () => {
               {quickScenarios.map((sc, i) => (
                 <button
                   key={i}
-                  onClick={() => handleSimulateReply(sc.text)}
+                  onClick={() => handleSimulateReply(sc.text, sc.phone, sc.name)}
                   disabled={loading}
                   className="p-3 text-left rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 transition-all group flex flex-col justify-between"
                 >

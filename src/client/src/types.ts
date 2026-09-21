@@ -14,6 +14,9 @@ export interface DashboardMetrics {
   pendingAttentionCount: number;
   pendingFollowUpsCount: number;
   responseRate: number;
+  verticalProfile?: 'DEFAULT' | 'ACCOUNTING';
+  brandName?: string;
+  brandSubtitle?: string;
   categoryBreakdown: Array<{
     category: string;
     count: number;
@@ -191,6 +194,9 @@ export interface OrganizationItem {
   role: 'OWNER' | 'ADMIN' | 'OPERATOR' | 'VIEWER';
   isMock: boolean;
   whatsAppStatus: string;
+  verticalProfile?: 'DEFAULT' | 'ACCOUNTING';
+  brandName?: string;
+  brandSubtitle?: string;
 }
 
 export interface OrganizationSettingsItem {
@@ -199,6 +205,9 @@ export interface OrganizationSettingsItem {
     name: string;
     slug?: string;
     logo?: string;
+    verticalProfile?: 'DEFAULT' | 'ACCOUNTING';
+    brandName?: string;
+    brandSubtitle?: string;
   };
   settings: {
     timezone: string;
@@ -207,6 +216,9 @@ export interface OrganizationSettingsItem {
     hasCustomGeminiKey: boolean;
     hasCustomOpenAiKey: boolean;
     promptOverrides?: string;
+    verticalProfile?: 'DEFAULT' | 'ACCOUNTING';
+    brandName?: string;
+    brandSubtitle?: string;
   };
   whatsApp: {
     isMock: boolean;

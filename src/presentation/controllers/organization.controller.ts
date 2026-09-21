@@ -24,15 +24,31 @@ export class OrganizationController {
         orderBy: { createdAt: 'asc' }
       });
 
-      const orgs = members.map(m => ({
-        id: m.organization.id,
-        name: m.organization.name,
-        slug: m.organization.slug,
-        logo: m.organization.logo,
-        role: m.role,
-        isMock: m.organization.whatsAppConnection?.isMock ?? true,
-        whatsAppStatus: m.organization.whatsAppConnection?.status ?? 'CONNECTED'
-      }));
+      const orgs = members.map(m => {
+        let verticalProfile = 'DEFAULT';
+        let brandName: string | undefined;
+        let brandSubtitle: string | undefined;
+        if (m.organization.metadata) {
+          try {
+            const meta = JSON.parse(m.organization.metadata);
+            if (meta.verticalProfile) verticalProfile = meta.verticalProfile;
+            if (meta.brandName) brandName = meta.brandName;
+            if (meta.brandSubtitle) brandSubtitle = meta.brandSubtitle;
+          } catch {}
+        }
+        return {
+          id: m.organization.id,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          logo: m.organization.logo,
+          role: m.role,
+          isMock: m.organization.whatsAppConnection?.isMock ?? true,
+          whatsAppStatus: m.organization.whatsAppConnection?.status ?? 'CONNECTED',
+          verticalProfile,
+          brandName,
+          brandSubtitle
+        };
+      });
 
       res.json(orgs);
     } catch (err: any) {
@@ -122,12 +138,27 @@ export class OrganizationController {
         return;
       }
 
+      let verticalProfile = 'DEFAULT';
+      let brandName: string | undefined;
+      let brandSubtitle: string | undefined;
+      if (organization.metadata) {
+        try {
+          const meta = JSON.parse(organization.metadata);
+          if (meta.verticalProfile) verticalProfile = meta.verticalProfile;
+          if (meta.brandName) brandName = meta.brandName;
+          if (meta.brandSubtitle) brandSubtitle = meta.brandSubtitle;
+        } catch {}
+      }
+
       res.json({
         organization: {
           id: organization.id,
           name: organization.name,
           slug: organization.slug,
-          logo: organization.logo
+          logo: organization.logo,
+          verticalProfile,
+          brandName,
+          brandSubtitle
         },
         settings: {
           timezone: settings?.timezone || 'America/Sao_Paulo',
@@ -135,7 +166,10 @@ export class OrganizationController {
           aiProvider: settings?.aiProvider || 'GEMINI',
           hasCustomGeminiKey: !!settings?.encryptedGeminiKey,
           hasCustomOpenAiKey: !!settings?.encryptedOpenAiKey,
-          promptOverrides: settings?.promptOverrides || ''
+          promptOverrides: settings?.promptOverrides || '',
+          verticalProfile,
+          brandName,
+          brandSubtitle
         },
         whatsApp: {
           isMock: connection?.isMock ?? true,
@@ -158,7 +192,7 @@ export class OrganizationController {
   async updateSettings(req: Request, res: Response): Promise<void> {
     try {
       const organizationId = req.organizationId!;
-      const { timezone, language, aiProvider, geminiApiKey, openAiApiKey, promptOverrides } = req.body;
+      const { timezone, language, aiProvider, geminiApiKey, openAiApiKey, promptOverrides, verticalProfile, brandName, brandSubtitle } = req.body;
 
       const updateData: any = {
         timezone,
@@ -182,6 +216,22 @@ export class OrganizationController {
         },
         update: updateData
       });
+
+      if (verticalProfile !== undefined || brandName !== undefined || brandSubtitle !== undefined) {
+        const currentOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
+        let currentMeta: any = {};
+        if (currentOrg?.metadata) {
+          try { currentMeta = JSON.parse(currentOrg.metadata); } catch {}
+        }
+        if (verticalProfile !== undefined) currentMeta.verticalProfile = verticalProfile;
+        if (brandName !== undefined) currentMeta.brandName = brandName;
+        if (brandSubtitle !== undefined) currentMeta.brandSubtitle = brandSubtitle;
+
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: { metadata: JSON.stringify(currentMeta) }
+        });
+      }
 
       res.json(updated);
     } catch (err: any) {
