@@ -272,10 +272,32 @@ export class ProcessInboundMessageUseCase {
     let taskDescription: string;
 
     if (verticalProfile === 'ACCOUNTING') {
+      // Extrai contexto do cliente a partir de person.notes ou person.name
+      let clientName = person.name;
+      let companyName = '';
+
+      if (person.notes) {
+        try {
+          const parsed = JSON.parse(person.notes);
+          if (parsed.companyName) companyName = parsed.companyName;
+          if (parsed.clientName) clientName = parsed.clientName;
+        } catch {
+          companyName = person.notes;
+        }
+      }
+
+      if (!companyName) {
+        const match = person.name.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) {
+          clientName = match[1].trim();
+          companyName = match[2].trim();
+        }
+      }
+
       // Análise Contábil / Fiscal da Yeshua
       const accResult = AccountingAIPolicy.analyze(dto.text, {
-        clientName: person.name,
-        companyName: org?.name
+        clientName,
+        companyName
       });
       category = accResult.category;
       reason = accResult.reasonSummary;

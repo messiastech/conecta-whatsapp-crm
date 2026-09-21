@@ -40,6 +40,20 @@ export function createApiRouter(
   const organizationController = new OrganizationController();
   const tasksController = new TasksController();
 
+  // --- Configuração Pública / Branding Inicial (Não Autenticada) ---
+  router.get('/public-config', (_req, res) => {
+    const vertical = process.env.VERTICAL_PROFILE || 'DEFAULT';
+    const isAccounting = vertical === 'ACCOUNTING';
+    const allowPublicSignup = process.env.ALLOW_PUBLIC_SIGNUP !== 'false';
+    res.json({
+      verticalProfile: vertical,
+      allowPublicSignup,
+      brandName: process.env.BRAND_NAME || (isAccounting ? 'YESHUA AI CLIENT DESK' : 'Conecta CRM'),
+      brandSubtitle: process.env.BRAND_SUBTITLE || (isAccounting ? 'powered by MEGA CORE' : 'SaaS Multi-Tenant & IA'),
+      demoUserEmail: isAccounting ? (process.env.YESHUA_DEMO_EMAIL || 'demo@yeshuacontabilidade.com.br') : undefined
+    });
+  });
+
   // --- Rotas de Gerenciamento de Workspaces/Organizações (Autenticadas) ---
   router.get('/organizations/my', requireAuth, (req, res) => organizationController.listMyOrganizations(req, res));
   router.post('/organizations', requireAuth, (req, res) => organizationController.createOrganization(req, res));
@@ -100,6 +114,9 @@ export function createApiRouter(
   );
 
   // --- Métricas do Dashboard (Tenant-Isolated) ---
+  router.get('/metrics', requireAuth, requireOrganization, (req, res) =>
+    metricsController.getDashboardMetrics(req, res)
+  );
   router.get('/metrics/dashboard', requireAuth, requireOrganization, (req, res) =>
     metricsController.getDashboardMetrics(req, res)
   );

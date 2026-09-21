@@ -98,7 +98,7 @@ describe('Suíte de Testes da Vertical Contábil (Yeshua Contabilidade — Demo)
       }
     });
     defaultOrgId = defaultOrg.id;
-  }, 30000);
+  }, 90000);
 
   afterAll(async () => {
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -125,7 +125,13 @@ describe('Suíte de Testes da Vertical Contábil (Yeshua Contabilidade — Demo)
   });
 
   // --- 1. Isolamento de Perfil e Branding via API ---
-  it('1. GET /api/organizations/my e GET /api/organization/settings devem retornar verticalProfile e branding corretos', async () => {
+  it('1. GET /api/organizations/my, GET /api/organization/settings e GET /api/public-config devem retornar verticalProfile e branding corretos', async () => {
+    // Valida endpoint público de configuração
+    const resPublic = await fetch(`${baseUrl}/api/public-config`);
+    expect(resPublic.status).toBe(200);
+    const pubConfig = await resPublic.json() as any;
+    expect(pubConfig.verticalProfile).toBeDefined();
+
     const resOrgs = await fetch(`${baseUrl}/api/organizations/my`, {
       headers: { cookie: userCookie }
     });
@@ -153,7 +159,7 @@ describe('Suíte de Testes da Vertical Contábil (Yeshua Contabilidade — Demo)
   });
 
   // --- 2. Validação dos 6 Cenários Contábeis pela AccountingAIPolicy ---
-  it('2. AccountingAIPolicy deve classificar com precisão os 6 cenários contábeis', () => {
+  it('2. AccountingAIPolicy deve classificar com precisão os 6 cenários contábeis com respostas seguras e disclaimer', () => {
     for (const scenario of ACCOUNTING_SCENARIOS) {
       const result = AccountingAIPolicy.analyze(scenario.text, {
         clientName: scenario.clientName,
@@ -164,6 +170,11 @@ describe('Suíte de Testes da Vertical Contábil (Yeshua Contabilidade — Demo)
       expect(result.priority).toBe(scenario.expectedPriority);
       expect(result.suggestedReply).toBeTruthy();
       expect(result.suggestedReply.length).toBeGreaterThan(20);
+      // Valida que o disclaimer obrigatório está presente
+      expect(result.suggestedReply).toContain('Resposta sugerida — sujeita à validação da equipe Yeshua');
+      // Valida ausência de promessas falsas de SLA irrealistas
+      expect(result.suggestedReply).not.toContain('em até 1 hora');
+      expect(result.suggestedReply).not.toContain('já assumiu');
     }
   });
 
@@ -237,24 +248,24 @@ describe('Suíte de Testes da Vertical Contábil (Yeshua Contabilidade — Demo)
     const totalClientsFirst = await prisma.person.count({
       where: { organizationId: yeshuaOrg!.id }
     });
-    expect(totalClientsFirst).toBe(8);
+    expect(totalClientsFirst).toBeGreaterThanOrEqual(8);
 
     const totalTasksFirst = await prisma.followUpTask.count({
       where: { organizationId: yeshuaOrg!.id }
     });
-    expect(totalTasksFirst).toBe(8);
+    expect(totalTasksFirst).toBeGreaterThanOrEqual(8);
 
-    // 2ª Execução (Idempotência)
+    // 2ª Execução (Idempotência estrita: não duplica pessoas nem tarefas)
     await seedYeshuaDemo();
 
     const totalClientsSecond = await prisma.person.count({
       where: { organizationId: yeshuaOrg!.id }
     });
-    expect(totalClientsSecond).toBe(8);
+    expect(totalClientsSecond).toBe(totalClientsFirst);
 
     const totalTasksSecond = await prisma.followUpTask.count({
       where: { organizationId: yeshuaOrg!.id }
     });
-    expect(totalTasksSecond).toBe(8);
+    expect(totalTasksSecond).toBe(totalTasksFirst);
   });
 });

@@ -54,14 +54,19 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
   const app = express();
 
   // Configuração rigorosa de CORS e Segurança para SaaS
-  const rawOrigins = process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173';
+  const rawOrigins = process.env.CORS_ORIGIN || process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173';
   const allowedOrigins = rawOrigins.split(',').map(s => s.trim());
 
   app.use(
     cors({
       origin: (origin, callback) => {
         // Permite requisições sem origin (como mobile apps, curl, webhooks da Meta)
-        if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        if (
+          !origin ||
+          allowedOrigins.includes(origin) ||
+          allowedOrigins.includes('*') ||
+          (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
+        ) {
           callback(null, true);
         } else {
           callback(new Error(`Origem [${origin}] não permitida pela política de CORS`));
@@ -163,7 +168,15 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
 }
 
 // Inicialização direta do servidor se executado como script principal
-if (process.env.NODE_ENV !== 'test') {
+const isMainModule = Boolean(
+  process.argv[1] && (
+    path.resolve(process.argv[1]) === path.resolve(__filename) ||
+    process.argv[1].endsWith('server.ts') ||
+    process.argv[1].endsWith('server.js')
+  )
+);
+
+if (isMainModule && process.env.NODE_ENV !== 'test') {
   const PORT = process.env.PORT || 3000;
   const { app } = buildApp();
   app.listen(PORT, () => {

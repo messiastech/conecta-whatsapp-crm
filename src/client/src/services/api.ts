@@ -46,6 +46,26 @@ async function apiFetch(url: string, options: RequestInit = {}): Promise<Respons
 }
 
 export const api = {
+  // --- Configuração Pública / Branding ---
+  async getPublicConfig(): Promise<{
+    verticalProfile?: string;
+    allowPublicSignup?: boolean;
+    brandName?: string;
+    brandSubtitle?: string;
+    demoUserEmail?: string;
+  }> {
+    try {
+      const res = await apiFetch(`${API_BASE}/public-config`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return {
+      verticalProfile: 'DEFAULT',
+      allowPublicSignup: true,
+      brandName: 'Conecta CRM',
+      brandSubtitle: 'SaaS Multi-Tenant & IA'
+    };
+  },
+
   // --- Autenticação (Better Auth) ---
   async login(email: string, password: string): Promise<{ user: AuthUser }> {
     const res = await apiFetch(`${API_BASE}/auth/sign-in/email`, {

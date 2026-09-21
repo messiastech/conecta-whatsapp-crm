@@ -43,7 +43,7 @@ const ACCOUNTING_RULES: AccountingRule[] = [
     isEscalation: true,
     summary: 'Notificação de fiscalização tributária ou auto de infração com prazo pericial.',
     replyTemplate: (name, company) =>
-      `Prezado(a) ${name || 'Cliente'}${company ? ` (${company})` : ''}, acusamos o recebimento da notificação fiscal. Devido à criticidade do prazo da SEFAZ/Receita, nosso auditor tributário sênior já assumiu seu atendimento e entrará em contato em até 1 hora para protocolar a documentação necessária.`
+      `Prezado(a) ${name || 'Cliente'}${company ? ` (${company})` : ''}, acusamos o recebimento do relato sobre a notificação fiscal. Devido à criticidade do prazo da SEFAZ/Receita, seu atendimento foi registrado para triagem prioritária da equipe técnica Yeshua para conferência documental.`
   },
   {
     category: 'FALAR_CONTADOR',
@@ -57,7 +57,7 @@ const ACCOUNTING_RULES: AccountingRule[] = [
     isEscalation: false,
     summary: 'Solicitação de reunião consultiva ou planejamento societário com o contador responsável.',
     replyTemplate: (name, company) =>
-      `Olá, ${name || 'Cliente'}! Perfeito. Encaminhamos sua solicitação à agenda do nosso contador responsável. Em instantes enviaremos os horários disponíveis para alinhamento estratégico da ${company || 'sua empresa'}.`
+      `Olá, ${name || 'Cliente'}! Registramos seu interesse em agendamento consultivo${company ? ` para ${company}` : ''}. Nossa equipe verificará a disponibilidade da agenda do contador responsável para propor os horários disponíveis.`
   },
   {
     category: 'NOTA_FISCAL',
@@ -71,7 +71,7 @@ const ACCOUNTING_RULES: AccountingRule[] = [
     isEscalation: false,
     summary: 'Suporte urgente para emissão de nota fiscal de serviço/produto e retenções tributárias na fonte.',
     replyTemplate: (name, company) =>
-      `Olá, ${name || 'Cliente'}! Para emissão de NFS-e com retenções para ${company || 'sua empresa'}, estamos conferindo o código de serviço municipal e alíquota de ISS aplicável. Nosso setor fiscal enviará o espelho correto em instantes.`
+      `Olá, ${name || 'Cliente'}! Recebemos sua dúvida sobre emissão de nota fiscal e retenções na fonte${company ? ` para ${company}` : ''}. Nossa equipe fiscal está conferindo o código de serviço municipal e alíquotas aplicáveis para orientar o procedimento.`
   },
   {
     category: 'IMUNIDADE_TEMPLO',
@@ -85,7 +85,7 @@ const ACCOUNTING_RULES: AccountingRule[] = [
     isEscalation: false,
     summary: 'Conformidade de entidade religiosa / terceiro setor, imunidade constitucional e emissão de CNDs.',
     replyTemplate: (name, company) =>
-      `A paz, ${name || 'irmão/pastor'}! A Yeshua possui núcleo especializado em igrejas e terceiro setor. Para a renovação de CND e cumprimento das obrigações da ${company || 'sua comunidade'}, solicitamos a ata de posse atualizada da diretoria para protocolo imediato.`
+      `A paz, ${name || 'irmão/pastor'}! A Yeshua possui núcleo dedicado a entidades religiosas e terceiro setor. Para análise da regularidade cadastral e emissão de CNDs${company ? ` da ${company}` : ''}, por favor disponibilize a ata de posse vigente para conferência da diretoria.`
   },
   {
     category: 'REFORMA_TRIBUTARIA',
@@ -99,7 +99,7 @@ const ACCOUNTING_RULES: AccountingRule[] = [
     isEscalation: false,
     summary: 'Consulta sobre impacto da Reforma Tributária (IBS/CBS) e regras do Simples Nacional.',
     replyTemplate: (name, company) =>
-      `Olá, ${name || 'Cliente'}! No regime do Simples Nacional para ${company || 'sua empresa'}, a Reforma Tributária prevê regime de transição escalonado (IBS/CBS). Seus créditos e benefícios continuam assegurados na faixa atual. Elaboramos um resumo técnico detalhado que já está disponível em seu painel.`
+      `Olá, ${name || 'Cliente'}! No regime do Simples Nacional${company ? ` para ${company}` : ''}, a Reforma Tributária prevê período de transição escalonado (IBS/CBS) com manutenção dos tratamentos favorecidos. Disponibilizamos orientações técnicas gerais e podemos analisar particularidades da sua atividade.`
   },
   {
     category: 'MEI',
@@ -113,13 +113,15 @@ const ACCOUNTING_RULES: AccountingRule[] = [
     isEscalation: false,
     summary: 'Excesso de limite de faturamento do MEI e necessidade de desenquadramento para Microempresa (ME).',
     replyTemplate: (name, company) =>
-      `Olá, ${name || 'Cliente'}! Calculamos o percentual excedente do seu MEI (${company || 'sua atividade'}). Como o faturamento ficou entre 20% e o limite de transição, efetuaremos o desenquadramento com vigência retroativa ou para o próximo exercício, emitindo a guia DAS proporcional para manter sua regularidade sem multas.`
+      `Olá, ${name || 'Cliente'}! Identificamos sua dúvida quanto ao limite de faturamento do MEI${company ? ` (${company})` : ''}. Caso o excesso ultrapasse os R$ 81 mil anuais, a equipe Yeshua analisará o percentual excedente para indicar o enquadramento adequado e as guias devidas.`
   }
 ];
 
+const DISCLAIMER = '\n\n[Resposta sugerida — sujeita à validação da equipe Yeshua]';
+
 export class AccountingAIPolicy {
   /**
-   * Classifica a mensagem sob a ótica contábil/fiscal da Yeshua
+   * Classifica a mensagem sob a ótica contábil/fiscal da Yeshua atuando como deterministic safety/escalation gate
    */
   public static analyze(text: string, context?: { clientName?: string; companyName?: string }): AccountingAIAnalysisResult {
     const cleanText = text.trim();
@@ -140,7 +142,7 @@ export class AccountingAIPolicy {
           requiresAttention: rule.requiresAttention,
           confidenceScore: 0.94,
           reasonSummary: rule.summary,
-          suggestedReply: rule.replyTemplate(name, company),
+          suggestedReply: rule.replyTemplate(name, company) + DISCLAIMER,
           suggestedAction: meta.suggestedAction,
           isEscalation: rule.isEscalation
         };
@@ -160,7 +162,7 @@ export class AccountingAIPolicy {
       requiresAttention: false,
       confidenceScore: 0.75,
       reasonSummary: 'Dúvida contábil operacional ou solicitação de documentos.',
-      suggestedReply: `Olá, ${name || 'Cliente'}! Recebemos sua mensagem na Yeshua Contabilidade. Nossa equipe já está processando sua solicitação para ${company || 'sua empresa'} e retornará com os dados solicitados.`,
+      suggestedReply: `Olá, ${name || 'Cliente'}! Recebemos sua mensagem na Yeshua Contabilidade. Nossa equipe registrará a solicitação${company ? ` para ${company}` : ''} e entrará em contato com as orientações pertinentes.${DISCLAIMER}`,
       suggestedAction: fallbackMeta.suggestedAction,
       isEscalation: false
     };
