@@ -190,12 +190,43 @@ export class GpnWebhooksController {
     // Ignorar mensagens enviadas pelo próprio sistema (fromMe)
     if (data.fromMe) return;
 
-    // Extrair telefone do JID do WhatsApp (ex: 5511999998888@s.whatsapp.net -> +5511999998888)
-    const phone = this.extractPhoneFromJid(data.remoteJid || data.senderJid || '');
-    if (!phone) return;
+    // 1. Priorizar senderPhone real resolvido pelo GPN Core Gateway
+    let phone = data.senderPhone ? String(data.senderPhone).trim() : '';
+
+    // 2. Se senderPhone não foi informado, tentar extrair somente se for JID telefônico @s.whatsapp.net (NUNCA @lid)
+    if (!phone) {
+      phone = this.extractPhoneFromJid(data.senderJid || data.remoteJid || '');
+    }
 
     const text = data.text || '';
     if (!text) return;
+
+    // 3. Se a identidade não puder ser resolvida (ex: apenas @lid sem PN correspondente):
+    if (!phone) {
+      console.warn(
+        `[GPN Webhook] Identidade não resolvida para mensagem ${data.messageId} (remoteJid: ${data.remoteJid}, senderLid: ${data.senderLid}). Marcando IDENTITY_UNRESOLVED.`
+      );
+
+      // Não auto-enviar, não criar telefone E.164 falso, registrar auditoria/incidente
+      await prisma.auditLog.create({
+        data: {
+          organizationId,
+          action: 'IDENTITY_UNRESOLVED',
+          entityType: 'WhatsAppMessage',
+          entityId: data.messageId || 'unknown',
+          details: JSON.stringify({
+            remoteJid: data.remoteJid,
+            senderJid: data.senderJid,
+            senderLid: data.senderLid,
+            pushName: data.pushName,
+            textSnippet: text.slice(0, 100),
+            reason: 'Remetente utilizou WhatsApp LID sem mapeamento de número telefônico correspondente.'
+          })
+        }
+      }).catch((err) => console.error('[GPN Webhook] Falha ao registrar log de IDENTITY_UNRESOLVED:', err.message));
+
+      return;
+    }
 
     await this.inboundUseCase.execute({
       organizationId,
@@ -435,12 +466,15 @@ export class GpnWebhooksController {
 
   /**
    * Extrai número de telefone puro de um JID do WhatsApp.
+   * REGRA P0: NUNCA converter @lid em número de telefone! Apenas @s.whatsapp.net é aceito.
    * Ex: "5511999998888@s.whatsapp.net" -> "+5511999998888"
    */
   private extractPhoneFromJid(jid: string): string {
     if (!jid) return '';
-    const num = jid.split('@')[0];
-    if (!num || !/^\d+$/.test(num)) return '';
+    const cleanJid = String(jid).trim();
+    if (cleanJid.endsWith('@lid')) return '';
+    const num = cleanJid.split('@')[0].split(':')[0];
+    if (!num || !/^\d+$/.test(num) || num.length < 8 || num.length > 15) return '';
     return `+${num}`;
   }
 }

@@ -120,7 +120,7 @@ export class ConversationsController {
         }
       }
 
-      const provider = await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+      const provider = this.defaultProvider || await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
 
       const sendResult = await provider.sendTextMessage(
         person.normalizedPhone,
@@ -159,12 +159,82 @@ export class ConversationsController {
           details: JSON.stringify({
             person: person.name,
             phone: person.normalizedPhone,
-            text
+            text,
+            success: sendResult.success,
+            status: sendResult.status,
+            errorMessage: sendResult.errorMessage || null
           })
         }
       });
 
+      if (!sendResult.success) {
+        res.status(502).json({
+          error: 'OUTBOUND_SEND_FAILED',
+          message: sendResult.errorMessage || 'Falha no envio da mensagem pelo provedor WhatsApp.',
+          messageRecord: message,
+          sendResult
+        });
+        return;
+      }
+
       res.status(201).json({ message, sendResult });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  async retry(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = req.organizationId!;
+      const id = String(req.params.id);
+      const messageId = String(req.params.messageId);
+
+      const conversation = await prisma.conversation.findFirst({
+        where: { id, organizationId },
+        include: { person: true }
+      });
+
+      if (!conversation || !conversation.person) {
+        res.status(404).json({ error: 'Conversa ou participante não encontrado' });
+        return;
+      }
+
+      const existingMessage = await prisma.message.findFirst({
+        where: { id: messageId, conversationId: id, organizationId }
+      });
+
+      if (!existingMessage) {
+        res.status(404).json({ error: 'Mensagem não encontrada' });
+        return;
+      }
+
+      const provider = this.defaultProvider || await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+      const sendResult = await provider.sendTextMessage(
+        conversation.person.normalizedPhone,
+        existingMessage.content
+      );
+
+      const updated = await prisma.message.update({
+        where: { id: messageId },
+        data: {
+          status: sendResult.success ? 'SENT' : 'FAILED',
+          providerMessageId: sendResult.messageId || existingMessage.providerMessageId,
+          errorMessage: sendResult.errorMessage || null,
+          sentAt: sendResult.success ? new Date() : null
+        }
+      });
+
+      if (!sendResult.success) {
+        res.status(502).json({
+          error: 'OUTBOUND_RETRY_FAILED',
+          message: sendResult.errorMessage || 'Falha ao reenviar mensagem pelo provedor WhatsApp.',
+          messageRecord: updated,
+          sendResult
+        });
+        return;
+      }
+
+      res.status(200).json({ message: updated, sendResult });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

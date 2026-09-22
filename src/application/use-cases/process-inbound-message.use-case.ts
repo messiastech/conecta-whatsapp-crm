@@ -6,6 +6,7 @@ import { AccountingAIPolicy } from '../verticals/accounting/accounting-ai-policy
 export interface ProcessInboundMessageDTO {
   organizationId: string;
   fromPhone: string;
+  senderName?: string;
   text: string;
   providerMessageId?: string;
   rawPayload?: any;
@@ -47,8 +48,8 @@ export class ProcessInboundMessageUseCase {
         include: {
           person: true,
           aiAnalyses: {
-            take: 1,
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: 'desc' },
+            take: 1
           }
         }
       });
@@ -92,13 +93,18 @@ export class ProcessInboundMessageUseCase {
       person = await prisma.person.create({
         data: {
           organizationId: dto.organizationId,
-          name: 'Participante (WhatsApp)',
+          name: dto.senderName || 'Participante (WhatsApp)',
           phone: dto.fromPhone,
           normalizedPhone,
           optOut: false,
           consentStatus: 'OPTED_IN',
           consentSource: 'INBOUND_MESSAGE'
         }
+      });
+    } else if (dto.senderName && person.name === 'Participante (WhatsApp)') {
+      person = await prisma.person.update({
+        where: { id: person.id },
+        data: { name: dto.senderName }
       });
     }
 

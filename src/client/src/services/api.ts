@@ -321,6 +321,17 @@ export const api = {
     return res.json();
   },
 
+  async retryMessage(conversationId: string, messageId: string): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/conversations/${conversationId}/messages/${messageId}/retry`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao reenviar mensagem');
+    }
+    return res.json();
+  },
+
   // --- Persons (CRM) & Timeline ---
   async getPersons(search?: string, optOut?: boolean): Promise<PersonItem[]> {
     const params = new URLSearchParams();

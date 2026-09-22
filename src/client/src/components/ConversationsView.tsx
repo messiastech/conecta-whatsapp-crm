@@ -9,7 +9,12 @@ import {
   AlertCircle,
   Tag,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Check,
+  CheckCheck,
+  Clock,
+  AlertTriangle,
+  RotateCw
 } from 'lucide-react';
 import { ConversationItem } from '../types.js';
 import { api } from '../services/api.js';
@@ -28,6 +33,7 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({
   );
   const [replyText, setReplyText] = useState<string>('');
   const [sending, setSending] = useState<boolean>(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
 
   const filteredConversations = conversations.filter(c => {
@@ -47,8 +53,23 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({
       onRefresh();
     } catch (err: any) {
       alert(err.message || 'Erro ao enviar resposta');
+      onRefresh();
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleRetry = async (messageId: string) => {
+    if (!selectedConversation) return;
+    try {
+      setRetryingId(messageId);
+      await api.retryMessage(selectedConversation.id, messageId);
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Falha ao tentar reenviar mensagem');
+      onRefresh();
+    } finally {
+      setRetryingId(null);
     }
   };
 
@@ -235,23 +256,84 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/50">
                 {selectedConversation.messages?.map((msg) => {
                   const isOutbound = msg.direction === 'OUTBOUND';
+                  const isFailed = isOutbound && msg.status === 'FAILED';
+
                   return (
                     <div
                       key={msg.id}
                       className={`flex flex-col ${isOutbound ? 'items-end' : 'items-start'}`}
                     >
-                      <div
-                        className={`max-w-[75%] p-3 rounded-2xl text-xs leading-relaxed shadow-xs ${
-                          isOutbound
-                            ? 'bg-emerald-600 text-white rounded-tr-none'
-                            : 'bg-white text-slate-800 rounded-tl-none border border-slate-200'
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                        <div className={`text-[9px] mt-1 text-right ${isOutbound ? 'text-emerald-100' : 'text-slate-400'}`}>
-                          {new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(new Date(msg.createdAt))}
+                      {isFailed ? (
+                        <div className="max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-rose-950/30 border border-rose-500/50 text-rose-100 rounded-tr-none space-y-2">
+                          <p className="whitespace-pre-wrap text-slate-100">{msg.content}</p>
+
+                          {msg.errorMessage && (
+                            <p className="text-[10px] text-rose-300 italic bg-rose-500/10 p-1.5 rounded-lg border border-rose-500/20 break-words">
+                              Erro: {msg.errorMessage}
+                            </p>
+                          )}
+
+                          <div className="flex items-center justify-between gap-3 pt-1.5 border-t border-rose-500/30 text-[10px]">
+                            <span className="flex items-center gap-1 font-bold text-rose-400">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              Não entregue
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-400">
+                                {new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(new Date(msg.createdAt))}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRetry(msg.id)}
+                                disabled={retryingId === msg.id}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                <RotateCw className={`w-3 h-3 ${retryingId === msg.id ? 'animate-spin' : ''}`} />
+                                {retryingId === msg.id ? 'Reenviando...' : 'Tentar novamente'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div
+                          className={`max-w-[75%] p-3 rounded-2xl text-xs leading-relaxed shadow-xs ${
+                            isOutbound
+                              ? 'bg-emerald-600 text-white rounded-tr-none'
+                              : 'bg-white text-slate-800 rounded-tl-none border border-slate-200'
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          <div
+                            className={`text-[9px] mt-1 text-right flex items-center justify-end gap-1 ${
+                              isOutbound ? 'text-emerald-100' : 'text-slate-400'
+                            }`}
+                          >
+                            <span>
+                              {new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(new Date(msg.createdAt))}
+                            </span>
+                            {isOutbound && (
+                              msg.status === 'READ' ? (
+                                <span title="Lida pelo destinatário" className="inline-flex items-center">
+                                  <CheckCheck className="w-3.5 h-3.5 text-cyan-200" />
+                                </span>
+                              ) : msg.status === 'DELIVERED' ? (
+                                <span title="Entregue ao aparelho" className="inline-flex items-center">
+                                  <CheckCheck className="w-3.5 h-3.5 text-emerald-200" />
+                                </span>
+                              ) : msg.status === 'SENT' ? (
+                                <span title="Enviada ao WhatsApp" className="inline-flex items-center">
+                                  <Check className="w-3.5 h-3.5 text-emerald-200" />
+                                </span>
+                              ) : (
+                                <span title="Na fila de envio" className="inline-flex items-center">
+                                  <Clock className="w-3 h-3 text-emerald-200 animate-pulse" />
+                                </span>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -120,6 +120,9 @@ export function createApiRouter(
   router.post('/conversations/:id/reply', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
     conversationsController.reply(req, res)
   );
+  router.post('/conversations/:id/messages/:messageId/retry', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
+    conversationsController.retry(req, res)
+  );
 
   // --- Rotas de Pessoas (CRM) e Linha do Tempo (Tenant-Isolated) ---
   router.get('/persons', requireAuth, requireOrganization, (req, res) => personsController.list(req, res));
