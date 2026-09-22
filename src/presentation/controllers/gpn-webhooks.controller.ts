@@ -198,8 +198,10 @@ export class GpnWebhooksController {
       phone = this.extractPhoneFromJid(data.senderJid || data.remoteJid || '');
     }
 
-    const text = data.text || '';
-    if (!text) return;
+    const text = data.text || data.caption || '';
+    const mediaList = Array.isArray(data.media) ? data.media : (data.media ? [data.media] : []);
+
+    if (!text && mediaList.length === 0) return;
 
     // 3. Se a identidade não puder ser resolvida (ex: apenas @lid sem PN correspondente):
     if (!phone) {
@@ -219,7 +221,8 @@ export class GpnWebhooksController {
             senderJid: data.senderJid,
             senderLid: data.senderLid,
             pushName: data.pushName,
-            textSnippet: text.slice(0, 100),
+            textSnippet: (text || 'Mídia recebida').slice(0, 100),
+            mediaCount: mediaList.length,
             reason: 'Remetente utilizou WhatsApp LID sem mapeamento de número telefônico correspondente.'
           })
         }
@@ -232,6 +235,7 @@ export class GpnWebhooksController {
       organizationId,
       fromPhone: phone,
       text,
+      media: mediaList,
       providerMessageId: data.messageId || undefined
     });
   }

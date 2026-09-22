@@ -1,12 +1,27 @@
 import { AbsenceAnalysis } from '../value-objects/absence-taxonomy.vo.js';
+import {
+  AIClassificationContext,
+  GenerateAccountingReplyParams,
+  AccountingAIReplyResult,
+  AITokensUsed,
+  AIHealthCheckResult,
+  MemoryMessageItem,
+  IAIProvider,
+  AICapabilities,
+  AttachmentInputDTO
+} from './ai-provider.port.js';
 
-export interface AIClassificationContext {
-  personName: string;
-  eventName: string;
-  eventDate?: string;
-  previousAttendances?: number;
-  outboundMessageText?: string;
-}
+export type {
+  AIClassificationContext,
+  GenerateAccountingReplyParams,
+  AccountingAIReplyResult,
+  AITokensUsed,
+  AIHealthCheckResult,
+  MemoryMessageItem,
+  IAIProvider,
+  AICapabilities,
+  AttachmentInputDTO
+};
 
 export interface IAIService {
   /**
@@ -25,4 +40,12 @@ export interface IAIService {
     context: AIClassificationContext,
     category: string
   ): Promise<{ suggestedReply: string; providerUsed: string }>;
+
+  /**
+   * Atendimento Inteligente Yeshua (AI Autopilot Contábil e Eclesiástico)
+   * Gera resposta com memória conversacional e safety gate estruturado
+   */
+  generateAccountingReply?(
+    params: GenerateAccountingReplyParams
+  ): Promise<AccountingAIReplyResult>;
 }

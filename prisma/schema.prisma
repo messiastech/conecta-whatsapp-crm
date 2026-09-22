@@ -94,12 +94,14 @@ model Organization {
   attendances        Attendance[]
   campaigns          Campaign[]
   conversations      Conversation[]
+  conversationMemories ConversationMemory[]
   messages           Message[]
   aiAnalyses         AIAnalysis[]
   followUpTasks      FollowUpTask[]
   consentHistories   ConsentHistory[]
   auditLogs          AuditLog[]
   gpnWebhookEvents   GpnWebhookEvent[]
+  attachments        MessageAttachment[]
 }
 
 model Member {
@@ -143,10 +145,14 @@ model OrganizationSettings {
   organizationId     String       @unique
   timezone           String       @default("America/Sao_Paulo")
   language           String       @default("pt-BR")
-  aiProvider         String       @default("GEMINI") // GEMINI, OPENAI, LOCAL_FALLBACK
+  aiProvider         String       @default("GEMINI") // GEMINI, DEEPSEEK, OPENAI, LOCAL_FALLBACK
+  aiModel            String?      // ex: "gemini-2.0-flash", "deepseek-chat"
   encryptedGeminiKey String?
+  encryptedDeepSeekKey String?
   encryptedOpenAiKey String?
   promptOverrides    String?
+  aiAutopilotEnabled Boolean      @default(false)
+  aiAutoReplyMinConfidence Float  @default(0.80)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -194,6 +200,7 @@ model Person {
   organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   attendances     Attendance[]
   conversations   Conversation[]
+  conversationMemories ConversationMemory[]
   messages        Message[]
   followUpTasks   FollowUpTask[]
   consentHistory  ConsentHistory[]
@@ -305,6 +312,7 @@ model Conversation {
 
   organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   person                 Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
+  conversationMemory     ConversationMemory?
   messages               Message[]
   aiAnalyses             AIAnalysis[]
   followUpTasks          FollowUpTask[]
@@ -324,6 +332,7 @@ model Message {
   direction         String       // OUTBOUND, INBOUND
   providerMessageId String?      @unique
   content           String
+  hasAttachments    Boolean      @default(false)
   status            String       @default("QUEUED") // QUEUED, SENT, DELIVERED, READ, FAILED
   errorMessage      String?
   sentAt            DateTime?
@@ -336,6 +345,7 @@ model Message {
   person            Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
   campaign          Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   aiAnalyses        AIAnalysis[]
+  attachments       MessageAttachment[]
 
   @@index([organizationId])
   @@index([conversationId])
@@ -449,3 +459,70 @@ model GpnWebhookEvent {
   @@unique([organizationId, eventId])
   @@index([organizationId])
 }
+
+// ==========================================
+// 7. CONVERSATION MEMORY (AI AUTOPILOT)
+// ==========================================
+
+model ConversationMemory {
+  id                      String       @id @default(uuid())
+  organizationId          String
+  personId                String
+  conversationId          String       @unique
+  summary                 String       @default("")
+  factsJson               String       @default("{}")
+  openItemsJson           String       @default("[]")
+  preferencesJson         String       @default("{}")
+  lastSummarizedMessageId String?
+  messageCount            Int          @default(0)
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+
+  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person                  Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  conversation            Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([personId])
+  @@index([conversationId])
+}
+
+// ==========================================
+// 8. MULTIMODAL MESSAGE ATTACHMENTS
+// ==========================================
+
+enum AttachmentType {
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  PDF
+  OTHER
+}
+
+model MessageAttachment {
+  id              String         @id @default(uuid())
+  organizationId  String
+  messageId       String
+  type            AttachmentType
+  mimeType        String
+  fileName        String?
+  sizeBytes       Int?
+  providerMediaId String?
+  storageKey      String?
+  sha256          String?
+  transcript      String?        @db.Text
+  extractedText   String?        @db.Text
+  aiSummary       String?        @db.Text
+  metadataJson    String?        @default("{}")
+  createdAt       DateTime       @default(now())
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  message         Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([messageId])
+  @@index([sha256])
+  @@index([type])
+}
+
