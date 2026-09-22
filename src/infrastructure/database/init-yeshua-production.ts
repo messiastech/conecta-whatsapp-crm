@@ -1,6 +1,7 @@
 import { prisma } from './prisma.client.js';
 import { hashPassword } from 'better-auth/crypto';
 import crypto from 'crypto';
+import { CryptoService } from '../security/crypto.service.js';
 
 export async function initYeshuaProduction() {
   console.log('========================================================================');
@@ -10,10 +11,6 @@ export async function initYeshuaProduction() {
   const adminEmail = process.env.YESHUA_ADMIN_EMAIL || 'admin@yeshuacontabilidade.com.br';
   const adminPassword = process.env.YESHUA_ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'YeshuaAdmin2026!');
 
-  if (!adminPassword) {
-    throw new Error('[Init Yeshua Prod] FATAL: A variável YESHUA_ADMIN_PASSWORD é obrigatória em ambiente de produção.');
-  }
-
   const orgSlug = 'yeshua-contabilidade-igrejas';
   const orgName = 'Yeshua Contabilidade — Gestão para Igrejas';
 
@@ -22,9 +19,12 @@ export async function initYeshuaProduction() {
     where: { email: adminEmail }
   });
 
-  const hashedPassword = await hashPassword(adminPassword);
-
   if (!user) {
+    if (!adminPassword) {
+      throw new Error('[Init Yeshua Prod] FATAL: A variável YESHUA_ADMIN_PASSWORD é obrigatória para criação inicial do administrador em produção.');
+    }
+    const hashedPassword = await hashPassword(adminPassword);
+
     user = await prisma.user.create({
       data: {
         id: crypto.randomUUID(),
@@ -36,7 +36,7 @@ export async function initYeshuaProduction() {
       }
     });
 
-    // Cria conta de credencial no Better Auth
+    // Cria conta de credencial no Better Auth apenas quando necessária
     await prisma.account.create({
       data: {
         id: crypto.randomUUID(),
@@ -48,23 +48,22 @@ export async function initYeshuaProduction() {
         updatedAt: new Date()
       }
     });
-    console.log(`[Init Yeshua Prod] ✅ Usuário administrador criado: ${adminEmail}`);
+    console.log(`[Init Yeshua Prod] ✅ Usuário administrador criado com credencial inicial: ${adminEmail}`);
   } else {
-    // Sincroniza credencial existente
+    // Usuário já existe: NÃO redefinir senha em todo restart!
     const existingAccount = await prisma.account.findFirst({
       where: { userId: user.id, providerId: 'credential' }
     });
 
     if (existingAccount) {
-      await prisma.account.update({
-        where: { id: existingAccount.id },
-        data: {
-          accountId: user.id,
-          password: hashedPassword,
-          updatedAt: new Date()
-        }
-      });
+      // Credencial já existe: preservar sem redefinir senha
+      console.log(`[Init Yeshua Prod] ✅ Usuário administrador existente preservado sem alteração de senha: ${adminEmail}`);
     } else {
+      // Criar credencial apenas quando necessária
+      if (!adminPassword) {
+        throw new Error('[Init Yeshua Prod] FATAL: Usuário existente sem credencial, YESHUA_ADMIN_PASSWORD é obrigatória para criar a credencial inicial.');
+      }
+      const hashedPassword = await hashPassword(adminPassword);
       await prisma.account.create({
         data: {
           id: crypto.randomUUID(),
@@ -76,17 +75,17 @@ export async function initYeshuaProduction() {
           updatedAt: new Date()
         }
       });
+      console.log(`[Init Yeshua Prod] ✅ Credencial criada apenas porque estava ausente para usuário existente: ${adminEmail}`);
     }
-    console.log(`[Init Yeshua Prod] ✅ Usuário administrador existente sincronizado: ${adminEmail}`);
   }
 
   // 2. Localiza ou cria a Organização de Produção
-  const metadata = JSON.stringify({
+  const canonicalMetadata = {
     verticalProfile: 'ACCOUNTING',
     brandName: 'YESHUA DESK IGREJAS',
     brandSubtitle: 'Contabilidade Especializada para Igrejas e Terceiro Setor',
     description: 'Gestão Contábil, Fiscal e Tributária Especializada para Igrejas e Organizações Religiosas'
-  });
+  };
 
   let org = await prisma.organization.findFirst({
     where: {
@@ -97,7 +96,8 @@ export async function initYeshuaProduction() {
     },
     include: {
       settings: true,
-      whatsAppConnection: true
+      whatsAppConnection: true,
+      gpnConnection: true
     }
   });
 
@@ -108,7 +108,7 @@ export async function initYeshuaProduction() {
       data: {
         name: orgName,
         slug: orgSlug,
-        metadata,
+        metadata: JSON.stringify(canonicalMetadata),
         settings: {
           create: {
             timezone: 'America/Sao_Paulo',
@@ -126,24 +126,66 @@ export async function initYeshuaProduction() {
       },
       include: {
         settings: true,
-        whatsAppConnection: true
+        whatsAppConnection: true,
+        gpnConnection: true
       }
     });
     console.log(`[Init Yeshua Prod] ✅ Organização criada: ${orgName} (${org.id})`);
   } else {
-    org = await prisma.organization.update({
-      where: { id: org.id },
-      data: {
-        name: orgName,
-        slug: orgSlug,
-        metadata
-      },
-      include: {
-        settings: true,
-        whatsAppConnection: true
+    // NÃO substituir Organization.metadata integralmente!
+    // Fazer merge preservando whatsappChannel, pendingWhatsAppReplacement,
+    // gpnIncident, preferredProvider, flags e propriedades futuras.
+    let currentMeta: Record<string, any> = {};
+    if (org.metadata) {
+      try {
+        currentMeta = JSON.parse(org.metadata);
+      } catch {
+        currentMeta = {};
       }
-    });
-    console.log(`[Init Yeshua Prod] ✅ Organização atualizada com branding de produção: ${orgName} (${org.id})`);
+    }
+
+    const mergedMetadata: Record<string, any> = {
+      ...canonicalMetadata,
+      ...currentMeta, // Propriedades existentes no banco têm precedência
+      verticalProfile: 'ACCOUNTING', // Garante perfil contábil canônico
+      brandName: currentMeta.brandName || canonicalMetadata.brandName,
+      brandSubtitle: currentMeta.brandSubtitle || canonicalMetadata.brandSubtitle,
+      description: currentMeta.description || canonicalMetadata.description
+    };
+
+    // Preservação estrita das propriedades operacionais de mensageria e resiliência
+    if (currentMeta.whatsappChannel) {
+      mergedMetadata.whatsappChannel = currentMeta.whatsappChannel;
+    }
+    if (currentMeta.pendingWhatsAppReplacement) {
+      mergedMetadata.pendingWhatsAppReplacement = currentMeta.pendingWhatsAppReplacement;
+    }
+    if (currentMeta.gpnIncident) {
+      mergedMetadata.gpnIncident = currentMeta.gpnIncident;
+    }
+    if (currentMeta.preferredProvider) {
+      mergedMetadata.preferredProvider = currentMeta.preferredProvider;
+    }
+
+    const newMetaString = JSON.stringify(mergedMetadata);
+    if (org.metadata !== newMetaString || org.name !== orgName || org.slug !== orgSlug) {
+      org = await prisma.organization.update({
+        where: { id: org.id },
+        data: {
+          name: orgName,
+          slug: orgSlug,
+          metadata: newMetaString
+        },
+        include: {
+          settings: true,
+          whatsAppConnection: true,
+          gpnConnection: true
+        }
+      });
+      console.log(`[Init Yeshua Prod] ✅ Organização atualizada com merge seguro de metadados: ${orgName} (${org.id})`);
+    } else {
+      console.log(`[Init Yeshua Prod] ✅ Metadados da organização já íntegros e preservados: ${orgName} (${org.id})`);
+    }
   }
 
   const orgId = org.id;
@@ -182,7 +224,42 @@ export async function initYeshuaProduction() {
     console.log(`[Init Yeshua Prod] ✅ Conexão WhatsApp de produção criada (isMock: false)`);
   }
 
-  // 5. Garante associação do usuário como OWNER
+  // 5. GPN: Sincroniza process.env.GPN_API_URL como fonte autoritativa da infraestrutura
+  const authoritativeGpnUrl = process.env.GPN_API_URL;
+  const gpnApiKey = process.env.GPN_API_KEY;
+
+  if (authoritativeGpnUrl) {
+    const existingGpn = org.gpnConnection || await prisma.gpnConnection.findUnique({
+      where: { organizationId: orgId }
+    });
+
+    if (!existingGpn) {
+      if (gpnApiKey) {
+        const gpnWebhookSecret = process.env.GPN_WEBHOOK_SECRET || crypto.randomBytes(24).toString('hex');
+        await prisma.gpnConnection.create({
+          data: {
+            organizationId: orgId,
+            apiUrl: authoritativeGpnUrl,
+            sessionId: `yeshua-prod-${crypto.randomBytes(4).toString('hex')}`,
+            encryptedApiKey: CryptoService.encrypt(gpnApiKey),
+            encryptedWebhookSecret: CryptoService.encrypt(gpnWebhookSecret),
+            isActive: true,
+            status: 'DISCONNECTED'
+          }
+        });
+        console.log(`[Init Yeshua Prod] ✅ GpnConnection provisionado com GPN_API_URL autoritativa da Mega`);
+      }
+    } else if (process.env.NODE_ENV === 'production' && existingGpn.apiUrl !== authoritativeGpnUrl) {
+      // Atualiza apiUrl se a Mega definiu nova URL autoritativa
+      await prisma.gpnConnection.update({
+        where: { organizationId: orgId },
+        data: { apiUrl: authoritativeGpnUrl }
+      });
+      console.log(`[Init Yeshua Prod] ✅ GpnConnection sincronizado com URL autoritativa: ${authoritativeGpnUrl}`);
+    }
+  }
+
+  // 6. Garante associação do usuário como OWNER
   const member = await prisma.member.findUnique({
     where: {
       organizationId_userId: {
@@ -215,7 +292,8 @@ export async function initYeshuaProduction() {
   console.log(`  - Admin: ${adminEmail}`);
   console.log(`  - Perfil: ACCOUNTING (YESHUA DESK IGREJAS)`);
   console.log(`  - Timezone: America/Sao_Paulo | IA: GEMINI`);
-  console.log(`  - Sem dados fictícios / Sem clientes fake / Sem conversas de sandbox`);
+  console.log(`  - Metadados: Preservados e mesclados de forma não-destrutiva`);
+  console.log(`  - Credencial: Preservada sem alteração forçada de senha`);
   console.log('========================================================================');
 
   return { orgId, userId: user.id };

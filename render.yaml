@@ -1,19 +1,19 @@
 # =======================================================
-# Render Blueprint (render.yaml) — Yeshua Cloud Demo
-# Plano Zero-Cost (Hobby/Free) com Release Automatizado
+# Render Blueprint (render.yaml) — Contingência Secundária
+# NOTA: Railway/Docker é o ambiente de produção principal.
 # =======================================================
 
 services:
   - type: web
     name: yeshua-desk-igrejas
     env: node
-    plan: free
+    plan: standard
     region: ohio
     buildCommand: npm install && npx prisma generate && npm run build
     preDeployCommand: npm run release:prod
-    startCommand: npm run release:prod && npm start
+    startCommand: npm start
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
@@ -38,7 +38,13 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: WHATSAPP_PROVIDER
-        value: mock
+        value: gpn
+      - key: GPN_API_URL
+        sync: false
+      - key: GPN_API_KEY
+        sync: false
+      - key: GPN_WEBHOOK_SECRET
+        sync: false
       - key: YESHUA_ADMIN_EMAIL
         value: admin@yeshuacontabilidade.com.br
       - key: YESHUA_ADMIN_PASSWORD

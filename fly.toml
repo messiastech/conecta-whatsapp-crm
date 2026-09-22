@@ -1,6 +1,6 @@
 # =======================================================
-# Fly.io Blueprint (fly.toml) — Yeshua Cloud Demo
-# Região GRU (São Paulo), SSL Automático, Release Command
+# Fly.io Blueprint (fly.toml) — Contingência Secundária
+# NOTA: Railway/Docker é o ambiente de produção principal.
 # =======================================================
 
 app = "yeshua-desk-igrejas"
@@ -10,7 +10,7 @@ primary_region = "gru"
   dockerfile = "Dockerfile"
 
 [deploy]
-  release_command = "npx prisma db push --skip-generate --accept-data-loss && npm run init:prod"
+  release_command = "npx prisma db push --skip-generate && npm run init:prod"
 
 [env]
   NODE_ENV = "production"
@@ -19,7 +19,7 @@ primary_region = "gru"
   ALLOW_PUBLIC_SIGNUP = "false"
   BRAND_NAME = "YESHUA DESK IGREJAS"
   BRAND_SUBTITLE = "Contabilidade Especializada para Igrejas e Terceiro Setor"
-  WHATSAPP_PROVIDER = "mock"
+  WHATSAPP_PROVIDER = "gpn"
   YESHUA_ADMIN_EMAIL = "admin@yeshuacontabilidade.com.br"
 
 [http_service]
@@ -27,7 +27,7 @@ primary_region = "gru"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ["app"]
 
 [[http_service.checks]]

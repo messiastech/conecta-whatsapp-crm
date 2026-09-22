@@ -80,8 +80,14 @@ export class WhatsAppProviderFactory {
     if (gpn) {
       if (gpn.isActive && gpn.status !== 'ERROR') {
         const apiKey = CryptoService.decrypt(gpn.encryptedApiKey);
+        // Em produção, process.env.GPN_API_URL é a fonte autoritativa da infraestrutura definida pela Mega.
+        // Nunca permite que URL antiga armazenada no tenant sobrescreva a URL produtiva.
+        const authoritativeApiUrl = (isProd && process.env.GPN_API_URL)
+          ? process.env.GPN_API_URL
+          : (gpn.apiUrl || process.env.GPN_API_URL || 'http://localhost:3000');
+
         return new GPNWhatsAppProvider({
-          apiUrl: gpn.apiUrl,
+          apiUrl: authoritativeApiUrl,
           apiKey,
           sessionId: gpn.sessionId,
           webhookSecret: gpn.encryptedWebhookSecret

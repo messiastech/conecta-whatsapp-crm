@@ -32,7 +32,12 @@ export class WhatsAppLifecycleService {
   public static getGpnConfig(gpnConnection: any) {
     const isProd = process.env.NODE_ENV === 'production';
 
-    let apiUrl = gpnConnection.apiUrl || process.env.GPN_API_URL;
+    // Em produção, process.env.GPN_API_URL é a fonte autoritativa da infraestrutura definida pela Mega.
+    // Nunca permite que URL antiga armazenada no tenant sobrescreva a URL produtiva.
+    let apiUrl = (isProd && process.env.GPN_API_URL)
+      ? process.env.GPN_API_URL
+      : (gpnConnection.apiUrl || process.env.GPN_API_URL);
+
     if (!apiUrl) {
       if (isProd) {
         throw new Error('[GPN_CONFIG_ERROR] GPN_API_URL não configurada no ambiente de produção.');

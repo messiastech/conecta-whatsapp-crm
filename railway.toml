@@ -1,0 +1,21 @@
+# ==============================================================================
+# Railway Deployment Configuration — MEGA APP (Stateless)
+# ==============================================================================
+# Produção Oficial Yeshua Igrejas / MEGA CORE
+# Arquitetura:
+# - MEGA APP: Stateless (Docker container)
+# - PostgreSQL: Externo via DATABASE_URL
+# - GPN Gateway: Serviço separado via GPN_API_URL
+# - Healthcheck: /health
+# ==============================================================================
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "node dist/presentation/server.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
