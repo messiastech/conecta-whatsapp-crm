@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../services/api.js';
 import { OrganizationSettingsItem } from '../types.js';
 import {
@@ -105,6 +106,12 @@ export const SettingsView: React.FC = () => {
 
   // Ações de Lifecycle do WhatsApp
   const handleConnectWhatsApp = async () => {
+    // Hardening: reuse active session to avoid duplicate GPN sessions on repeated clicks/reload
+    if (channelStatus?.status === 'AGUARDANDO_QR' && channelStatus.qrCode) {
+      setSuccessMsg('QR Code já disponível. Escaneie com o WhatsApp.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+      return;
+    }
     try {
       setChannelLoading(true);
       const res = await api.connectWhatsApp();
@@ -394,13 +401,19 @@ export const SettingsView: React.FC = () => {
               <div className="inline-block p-4 bg-white rounded-2xl shadow-2xl">
                 {channelStatus.qrCode?.startsWith('data:image') ? (
                   <img src={channelStatus.qrCode} alt="WhatsApp QR Code" className="w-52 h-52 mx-auto" />
+                ) : channelStatus.qrCode ? (
+                  <QRCodeSVG
+                    value={channelStatus.qrCode}
+                    size={208}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    title="WhatsApp QR Code"
+                  />
                 ) : (
-                  <div className="w-52 h-52 bg-slate-950 text-white rounded-xl flex flex-col items-center justify-center p-3 text-center">
-                    <QrCode className="w-16 h-16 text-emerald-400 mb-2" />
-                    <span className="text-[10px] text-slate-400 font-mono break-all line-clamp-3">
-                      {channelStatus.qrCode || 'Gerando token de sessão...'}
-                    </span>
-                    <span className="text-[11px] text-emerald-400 font-bold mt-2">Código de Pareamento Pronto</span>
+                  <div className="w-52 h-52 flex flex-col items-center justify-center text-center">
+                    <RefreshCw className="w-10 h-10 text-emerald-500 animate-spin mb-3" />
+                    <span className="text-sm text-slate-600 font-medium">Gerando QR Code seguro...</span>
                   </div>
                 )}
               </div>

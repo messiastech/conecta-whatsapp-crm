@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-09-22T13:29:56.504Z",
-  "targetUrl": "http://127.0.0.1:24723",
-  "sessionId": "contract-spec-1790083796500",
+  "timestamp": "2026-09-22T15:38:26.464Z",
+  "targetUrl": "http://127.0.0.1:26085",
+  "sessionId": "contract-spec-1790091506454",
   "httpStatus": 200,
   "contractValidation": {
     "hasOkField": true,
