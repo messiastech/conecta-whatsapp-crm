@@ -10,6 +10,7 @@ import { createApiRouter } from './routes/api.routes.js';
 import { IWhatsAppProvider } from '../domain/ports/whatsapp-provider.port.js';
 import { MockWhatsAppProvider } from '../infrastructure/whatsapp/mock-whatsapp.provider.js';
 import { MetaWhatsAppProvider } from '../infrastructure/whatsapp/meta-whatsapp.provider.js';
+import { GPNWhatsAppProvider } from '../infrastructure/whatsapp/gpn-whatsapp.provider.js';
 import { CompositeAIService } from '../infrastructure/ai/composite-ai.service.js';
 import { auth } from '../infrastructure/auth/auth.config.js';
 import { prisma } from '../infrastructure/database/prisma.client.js';
@@ -141,7 +142,7 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
   // Rotas de Autenticação do Better Auth (/api/auth/*)
   app.all('/api/auth/*', toNodeHandler(auth));
 
-  // Escolha do Provedor Padrão de WhatsApp (Mock ou Meta)
+  // Escolha do Provedor Padrão de WhatsApp (Mock, Meta ou GPN)
   const providerType = process.env.WHATSAPP_PROVIDER || 'mock';
   let whatsappProvider: IWhatsAppProvider;
 
@@ -154,6 +155,31 @@ export function buildApp(): { app: express.Express; whatsappProvider: IWhatsAppP
       webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || ''
     });
     console.log('[WhatsApp CRM] Provedor Oficial WhatsApp Cloud API ativado como fallback global');
+  } else if (providerType === 'gpn') {
+    console.log('[WhatsApp CRM] Provedor GPN Gateway ativado (resolução estrita por tenant)');
+    const gpnUrl = process.env.GPN_API_URL;
+    const gpnKey = process.env.GPN_API_KEY;
+    const gpnSessionId = process.env.GPN_SESSION_ID || 'default-gpn-session';
+    const gpnSecret = process.env.GPN_WEBHOOK_SECRET;
+
+    if (gpnUrl && gpnKey) {
+      whatsappProvider = new GPNWhatsAppProvider({
+        apiUrl: gpnUrl,
+        apiKey: gpnKey,
+        sessionId: gpnSessionId,
+        webhookSecret: gpnSecret
+      });
+    } else {
+      // Mock é proibido fora do Sandbox. Quando sem URL/KEY globais, falha se chamado diretamente fora do tenant
+      whatsappProvider = new Proxy({} as IWhatsAppProvider, {
+        get: (_target, prop) => {
+          if (prop === 'constructor') return { name: 'GPNWhatsAppProvider' };
+          return async (..._args: any[]) => {
+            throw new Error('[GPN_GATEWAY_REQUIRED] Em modo GPN, operações de envio devem ser resolvidas pelo tenant via WhatsAppProviderFactory.');
+          };
+        }
+      });
+    }
   } else {
     whatsappProvider = MockWhatsAppProvider.getInstance();
     console.log('[WhatsApp CRM] Provedor Mock Sandbox ativado');

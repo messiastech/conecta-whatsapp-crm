@@ -67,14 +67,23 @@ export class ConversationsController {
     }
   }
 
+  private async resolveProvider(organizationId: string): Promise<IWhatsAppProvider> {
+    if (process.env.NODE_ENV === 'production') {
+      return WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+    }
+
+    return this.defaultProvider ||
+      WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+  }
+
   async reply(req: Request, res: Response): Promise<void> {
     try {
       const organizationId = req.organizationId!;
       const id = String(req.params.id);
       const { text } = req.body;
 
-      if (!text || text.trim().length === 0) {
-        res.status(400).json({ error: 'Texto da resposta é obrigatório' });
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        res.status(400).json({ error: 'O texto da mensagem é obrigatório' });
         return;
       }
 
@@ -90,12 +99,20 @@ export class ConversationsController {
 
       const person = conversation.person;
 
+      if (person.optOut) {
+        res.status(403).json({
+          error: 'CONTATO_COM_OPT_OUT',
+          message: 'O participante solicitou descadastramento (opt-out). O envio de novas mensagens é proibido.'
+        });
+        return;
+      }
+
       // Validação da Janela de Atendimento de 24 horas (Regra Oficial da Meta Cloud API)
       // Aplica-se SOMENTE quando o provedor ativo da organização é META Cloud API.
       // GPN (Baileys) e Mock não possuem essa restrição.
       const providerType = await WhatsAppProviderFactory.getProviderType(organizationId);
 
-      if (providerType !== 'GPN') {
+      if (providerType === 'META') {
         const lastInboundMessage = await prisma.message.findFirst({
           where: {
             conversationId: id,
@@ -120,12 +137,16 @@ export class ConversationsController {
         }
       }
 
-      const provider = this.defaultProvider || await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+      const provider = await this.resolveProvider(organizationId);
 
       const sendResult = await provider.sendTextMessage(
         person.normalizedPhone,
         text
       );
+
+      const providerName = (sendResult.provider === 'META_CLOUD_API'
+        ? 'META'
+        : (sendResult.provider || (provider.constructor.name === 'GPNWhatsAppProvider' ? 'GPN' : 'META'))).toUpperCase();
 
       const message = await prisma.message.create({
         data: {
@@ -153,15 +174,17 @@ export class ConversationsController {
       await prisma.auditLog.create({
         data: {
           organizationId,
-          action: 'HUMAN_REPLY_SENT',
+          action: sendResult.success ? 'HUMAN_REPLY_SENT' : 'HUMAN_REPLY_FAILED',
           entityType: 'Conversation',
           entityId: conversation.id,
           details: JSON.stringify({
             person: person.name,
             phone: person.normalizedPhone,
             text,
+            provider: providerName,
             success: sendResult.success,
             status: sendResult.status,
+            messageId: sendResult.messageId || null,
             errorMessage: sendResult.errorMessage || null
           })
         }
@@ -208,11 +231,15 @@ export class ConversationsController {
         return;
       }
 
-      const provider = this.defaultProvider || await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+      const provider = await this.resolveProvider(organizationId);
       const sendResult = await provider.sendTextMessage(
         conversation.person.normalizedPhone,
         existingMessage.content
       );
+
+      const providerName = (sendResult.provider === 'META_CLOUD_API'
+        ? 'META'
+        : (sendResult.provider || (provider.constructor.name === 'GPNWhatsAppProvider' ? 'GPN' : 'META'))).toUpperCase();
 
       const updated = await prisma.message.update({
         where: { id: messageId },
@@ -221,6 +248,26 @@ export class ConversationsController {
           providerMessageId: sendResult.messageId || existingMessage.providerMessageId,
           errorMessage: sendResult.errorMessage || null,
           sentAt: sendResult.success ? new Date() : null
+        }
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          organizationId,
+          action: sendResult.success ? 'HUMAN_REPLY_SENT' : 'HUMAN_REPLY_FAILED',
+          entityType: 'Conversation',
+          entityId: conversation.id,
+          details: JSON.stringify({
+            person: conversation.person.name,
+            phone: conversation.person.normalizedPhone,
+            messageId,
+            provider: providerName,
+            retry: true,
+            success: sendResult.success,
+            status: sendResult.status,
+            providerMessageId: sendResult.messageId || null,
+            errorMessage: sendResult.errorMessage || null
+          })
         }
       });
 

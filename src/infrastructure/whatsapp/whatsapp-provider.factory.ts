@@ -140,8 +140,8 @@ export class WhatsAppProviderFactory {
     // 5. MOCK Sandbox (exclusivo para desenvolvimento ou teste quando não há provedores reais configurados)
     // Para ACCOUNTING em produção, a regra acima já bloqueou terminantemente.
     if (!isProd || connection?.isMock) {
-      if (isAccounting && isProd) {
-        throw new Error('[WHATSAPP_PROD_ERROR] MockWhatsAppProvider é estritamente proibido para vertical ACCOUNTING em produção.');
+      if ((isAccounting || process.env.WHATSAPP_PROVIDER === 'gpn') && isProd) {
+        throw new Error('[WHATSAPP_PROD_ERROR] MockWhatsAppProvider é estritamente proibido em ambiente de produção com GPN.');
       }
       return MockWhatsAppProvider.getInstance();
     }

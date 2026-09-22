@@ -30,9 +30,15 @@ export function createApiRouter(
 ): Router {
   const router = Router();
 
+  // Em modo GPN ou produção, NUNCA passar MockWhatsAppProvider para controllers reais de envio
+  const isGpnOrProd = process.env.NODE_ENV === 'production' || process.env.WHATSAPP_PROVIDER === 'gpn';
+  const operationalProvider = (isGpnOrProd && whatsappProvider instanceof MockWhatsAppProvider)
+    ? undefined
+    : whatsappProvider;
+
   const eventsController = new EventsController();
-  const campaignsController = new CampaignsController(whatsappProvider);
-  const conversationsController = new ConversationsController(whatsappProvider);
+  const campaignsController = new CampaignsController(operationalProvider);
+  const conversationsController = new ConversationsController(operationalProvider);
   const personsController = new PersonsController();
   const webhooksController = new WebhooksController(whatsappProvider, aiService);
   const metricsController = new MetricsController();

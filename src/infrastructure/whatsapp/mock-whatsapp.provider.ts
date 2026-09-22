@@ -50,13 +50,21 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
     this.failNextSend = fail;
   }
 
+  private assertNotForbiddenInProduction(isSandbox: boolean = false): void {
+    if (!isSandbox && process.env.NODE_ENV === 'production' && process.env.WHATSAPP_PROVIDER === 'gpn') {
+      throw new Error('[MOCK_FORBIDDEN_IN_PRODUCTION] MockWhatsAppProvider é estritamente proibido para envio fora do Sandbox em ambiente de produção com GPN.');
+    }
+  }
+
   async sendTemplateMessage(
     to: string,
     templateName: string,
     parameters: Record<string, string>,
     fallbackBody?: string,
-    organizationId?: string
+    organizationId?: string,
+    isSandbox: boolean = false
   ): Promise<WhatsAppSendResult> {
+    this.assertNotForbiddenInProduction(isSandbox);
     const messageId = `wamid.mock_${uuidv4().substring(0, 18)}`;
 
     if (this.failNextSend) {
@@ -142,7 +150,8 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
     };
   }
 
-  async sendTextMessage(to: string, text: string, organizationId?: string): Promise<WhatsAppSendResult> {
+  async sendTextMessage(to: string, text: string, organizationId?: string, isSandbox: boolean = false): Promise<WhatsAppSendResult> {
+    this.assertNotForbiddenInProduction(isSandbox);
     const messageId = `wamid.mock_${uuidv4().substring(0, 18)}`;
 
     const logEntry: SandboxMessageLog = {

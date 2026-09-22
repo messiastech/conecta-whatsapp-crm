@@ -53,6 +53,13 @@ export class CampaignsController {
     }
   }
 
+  private async resolveProvider(organizationId: string): Promise<IWhatsAppProvider> {
+    if (process.env.NODE_ENV === 'production') {
+      return WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+    }
+    return this.defaultProvider || WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+  }
+
   async dispatch(req: Request, res: Response): Promise<void> {
     try {
       const organizationId = req.organizationId!;
@@ -64,7 +71,7 @@ export class CampaignsController {
       }
 
       // Obtém o provedor configurado para esta organização
-      const orgProvider = await WhatsAppProviderFactory.getProviderForOrganization(organizationId);
+      const orgProvider = await this.resolveProvider(organizationId);
       const useCase = new DispatchCampaignUseCase(orgProvider);
 
       const result = await useCase.execute({
