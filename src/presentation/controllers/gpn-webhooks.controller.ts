@@ -5,6 +5,7 @@ import { GPNWhatsAppProvider } from '../../infrastructure/whatsapp/gpn-whatsapp.
 import { ProcessInboundMessageUseCase } from '../../application/use-cases/process-inbound-message.use-case.js';
 import { IAIService } from '../../domain/ports/ai-service.port.js';
 import { PhoneNumber } from '../../domain/value-objects/phone-number.vo.js';
+import { WhatsAppLifecycleService } from '../../application/services/whatsapp-lifecycle.service.js';
 
 /**
  * Controller dedicado para recepção de webhooks do GPN Core Gateway.
@@ -218,17 +219,26 @@ export class GpnWebhooksController {
     const data = body.data;
     if (!data || !data.messageId) return;
 
-    // Mapeamento de statusName do GPN para status do Conecta
+    // Mapeamento de status/statusName do GPN para status do Conecta
+    const rawStatus = String(data.statusName || data.status || '').toLowerCase();
     const statusMap: Record<string, string> = {
       'server': 'SENT',
+      'sent': 'SENT',
+      '2': 'SENT',
       'delivered': 'DELIVERED',
+      '3': 'DELIVERED',
       'read': 'READ',
       'played': 'READ',
+      '4': 'READ',
+      '5': 'READ',
       'error': 'FAILED',
-      'pending': 'QUEUED'
+      'failed': 'FAILED',
+      '0': 'FAILED',
+      'pending': 'QUEUED',
+      '1': 'QUEUED'
     };
 
-    const conectaStatus = statusMap[data.statusName] || null;
+    const conectaStatus = statusMap[rawStatus] || null;
     if (!conectaStatus) return;
 
     const updateData: any = { status: conectaStatus };
@@ -278,6 +288,14 @@ export class GpnWebhooksController {
     await prisma.gpnConnection.update({
       where: { organizationId },
       data: { status: conectaStatus }
+    });
+
+    // Sincroniza metadados do canal de WhatsApp com o ciclo de vida
+    const phone = data.phone || (data.user?.id ? this.extractPhoneFromJid(data.user.id) : undefined);
+    await WhatsAppLifecycleService.updateSessionStatus(organizationId, {
+      status: rawStatus,
+      phone,
+      qr: data.qr || data.qrcode
     });
   }
 

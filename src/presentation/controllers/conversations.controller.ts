@@ -95,7 +95,7 @@ export class ConversationsController {
       // GPN (Baileys) e Mock não possuem essa restrição.
       const providerType = await WhatsAppProviderFactory.getProviderType(organizationId);
 
-      if (providerType === 'META') {
+      if (providerType !== 'GPN') {
         const lastInboundMessage = await prisma.message.findFirst({
           where: {
             conversationId: id,

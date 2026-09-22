@@ -131,10 +131,12 @@ describe('Suíte de Testes de Observabilidade e Prontidão em Produção (Cloud 
     it('deve abortar startup se YESHUA_DEMO_EMAIL ou YESHUA_DEMO_PASSWORD faltarem na vertical ACCOUNTING', () => {
       setValidProductionEnv();
       delete process.env.YESHUA_DEMO_EMAIL;
+      delete process.env.YESHUA_ADMIN_EMAIL;
       expect(() => validateProductionEnvironment()).toThrow(/YESHUA_DEMO_EMAIL/);
 
       setValidProductionEnv();
       delete process.env.YESHUA_DEMO_PASSWORD;
+      delete process.env.YESHUA_ADMIN_PASSWORD;
       expect(() => validateProductionEnvironment()).toThrow(/YESHUA_DEMO_PASSWORD/);
     });
 

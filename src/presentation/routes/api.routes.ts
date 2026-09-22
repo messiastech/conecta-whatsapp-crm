@@ -11,6 +11,7 @@ import { SandboxController } from '../controllers/sandbox.controller.js';
 import { TasksController } from '../controllers/tasks.controller.js';
 import { OrganizationController } from '../controllers/organization.controller.js';
 import { GpnWebhooksController } from '../controllers/gpn-webhooks.controller.js';
+import { WhatsAppLifecycleController } from '../controllers/whatsapp-lifecycle.controller.js';
 
 import { requireAuth, requireOrganization, requireRole } from '../middlewares/auth.middleware.js';
 import { IWhatsAppProvider } from '../../domain/ports/whatsapp-provider.port.js';
@@ -67,6 +68,24 @@ export function createApiRouter(
   );
   router.patch('/organization/whatsapp', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
     organizationController.updateWhatsAppConnection(req, res)
+  );
+
+  // --- Rotas de Lifecycle do Canal WhatsApp (Tenant-Isolated) ---
+  const whatsappLifecycleController = new WhatsAppLifecycleController();
+  router.get('/organization/whatsapp/status', requireAuth, requireOrganization, (req, res) =>
+    whatsappLifecycleController.getStatus(req, res)
+  );
+  router.post('/organization/whatsapp/connect', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
+    whatsappLifecycleController.connect(req, res)
+  );
+  router.post('/organization/whatsapp/reconnect', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
+    whatsappLifecycleController.reconnect(req, res)
+  );
+  router.post('/organization/whatsapp/replace', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
+    whatsappLifecycleController.replace(req, res)
+  );
+  router.delete('/organization/whatsapp/disconnect', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
+    whatsappLifecycleController.disconnect(req, res)
   );
 
   // --- Rotas de Eventos e Presença (Tenant-Isolated) ---

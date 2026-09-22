@@ -168,6 +168,57 @@ export const api = {
     return res.json();
   },
 
+  // --- WhatsApp Lifecycle & Channel Operations ---
+  async getWhatsAppStatus(): Promise<{
+    status: 'NAO_CONECTADO' | 'AGUARDANDO_QR' | 'CONECTANDO' | 'CONECTADO' | 'DESCONECTADO' | 'ERRO';
+    connectedPhone?: string | null;
+    connectedAt?: string | null;
+    lastActivityAt?: string | null;
+    qrCode?: string | null;
+    sessionId?: string | null;
+    provider: 'GPN';
+    isOperating: boolean;
+    errorMessage?: string | null;
+  }> {
+    const res = await apiFetch(`${API_BASE}/organization/whatsapp/status`);
+    if (!res.ok) throw new Error('Falha ao obter status do canal WhatsApp');
+    return res.json();
+  },
+
+  async connectWhatsApp(): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/organization/whatsapp/connect`, {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error('Falha ao iniciar pareamento do WhatsApp');
+    return res.json();
+  },
+
+  async reconnectWhatsApp(): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/organization/whatsapp/reconnect`, {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error('Falha ao solicitar reconexão do WhatsApp');
+    return res.json();
+  },
+
+  async replaceWhatsAppNumber(confirm: boolean, reason?: string): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/organization/whatsapp/replace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm, reason })
+    });
+    if (!res.ok) throw new Error('Falha ao solicitar substituição de número');
+    return res.json();
+  },
+
+  async disconnectWhatsApp(): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/organization/whatsapp/disconnect`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) throw new Error('Falha ao desconectar WhatsApp');
+    return res.json();
+  },
+
   // --- Metrics ---
   async getMetrics(): Promise<DashboardMetrics> {
     const res = await apiFetch(`${API_BASE}/metrics/dashboard`);
