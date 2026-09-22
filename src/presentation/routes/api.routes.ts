@@ -84,6 +84,12 @@ export function createApiRouter(
   router.post('/organization/whatsapp/replace', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
     whatsappLifecycleController.replace(req, res)
   );
+  router.post('/organization/whatsapp/replace/cancel', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
+    whatsappLifecycleController.cancelReplace(req, res)
+  );
+  router.delete('/organization/whatsapp/replace', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
+    whatsappLifecycleController.cancelReplace(req, res)
+  );
   router.delete('/organization/whatsapp/disconnect', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN']), (req, res) =>
     whatsappLifecycleController.disconnect(req, res)
   );

@@ -104,8 +104,14 @@ export class GPNWhatsAppProvider implements IWhatsAppProvider {
   /**
    * Inicia ou provisiona uma sessão Baileys no GPN Core Gateway.
    * Retorna status da sessão e QR Code se aguardando pareamento.
+   *
+   * Hardening de Segurança:
+   * - Em produção (NODE_ENV === 'production'): QR Code simulado é ESTRITAMENTE PROIBIDO.
+   *   Se o GPN não responder ou não retornar QR/sessão válido, lança [GPN_UNAVAILABLE].
+   * - Mock/simulação permitido somente quando process.env.NODE_ENV === 'test' ou desenvolvimento local fora de produção.
    */
   async startSession(sessionId: string): Promise<{ ok: boolean; qr?: string; status: string; phone?: string }> {
+    const isProd = process.env.NODE_ENV === 'production';
     const url = `${this.config.apiUrl}/api/v1/sessions`;
 
     try {
@@ -121,18 +127,36 @@ export class GPNWhatsAppProvider implements IWhatsAppProvider {
 
       if (response.ok) {
         const data = await response.json() as any;
+        const qr = data.qr || data.qrcode || undefined;
+        const status = data.status || 'WAITING_QR';
+
+        if (isProd && status === 'WAITING_QR' && !qr) {
+          throw new Error('[GPN_UNAVAILABLE] GPN Core Gateway conectado mas não retornou QR Code válido.');
+        }
+
         return {
           ok: true,
-          qr: data.qr || data.qrcode || undefined,
-          status: data.status || 'WAITING_QR',
+          qr,
+          status,
           phone: data.phone || undefined
         };
       }
-    } catch {
+
+      if (isProd) {
+        throw new Error(`[GPN_UNAVAILABLE] GPN Core Gateway retornou erro HTTP ${response.status}.`);
+      }
+    } catch (err: any) {
+      if (isProd || err.message?.startsWith('[GPN_UNAVAILABLE]')) {
+        throw new Error(`[GPN_UNAVAILABLE] ${err.message || 'Falha de comunicação com GPN Core Gateway.'}`);
+      }
       // Em modo offline / simulação de desenvolvimento ou teste
     }
 
-    // Fallback simulado para desenvolvimento local sem gateway ativo
+    if (isProd) {
+      throw new Error('[GPN_UNAVAILABLE] Proibida simulação de QR Code em ambiente de produção.');
+    }
+
+    // Fallback simulado exclusivamente para desenvolvimento ou testes (NUNCA em produção)
     return {
       ok: true,
       qr: `2@gpn_simulated_qr_code_${sessionId}_${Date.now()}`,

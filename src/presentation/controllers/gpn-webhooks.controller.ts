@@ -259,10 +259,22 @@ export class GpnWebhooksController {
   /**
    * Processa mudança de status da sessão Baileys no GPN.
    *
+   * Suporta:
+   * 1. Substituição de número em duas fases (Two-Phase Replacement):
+   *    - Se o evento for para pendingSessionId, somente promove para ativa quando conectado,
+   *      ou limpa staging se falhar.
+   * 2. Sessão corrente normal:
+   *    - Atualiza status do GpnConnection e canal WhatsApp.
+   *    - Ao receber session.status: connected, resolve incidentes operacionais pendentes.
+   *
    * Payload esperado (data do webhook GPN):
    * {
+   *   sessionId?: string,
    *   data: {
+   *     sessionId?: string,
    *     status: 'connected' | 'disconnected' | 'qr' | 'connecting' | ...,
+   *     phone?: string,
+   *     qr?: string,
    *     ...
    *   }
    * }
@@ -272,7 +284,124 @@ export class GpnWebhooksController {
     if (!data) return;
 
     const rawStatus = String(data.status || '').toLowerCase();
+    const eventSessionId = body.sessionId || data.sessionId;
 
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      include: { gpnConnection: true }
+    });
+    if (!org) return;
+
+    let metadata: any = {};
+    if (org.metadata) {
+      try { metadata = JSON.parse(org.metadata); } catch {}
+    }
+
+    const pending = metadata.pendingWhatsAppReplacement;
+    const isPendingSession = Boolean(
+      pending &&
+      pending.newSessionId &&
+      eventSessionId &&
+      eventSessionId === pending.newSessionId
+    );
+
+    // === FLUXO 1: Evento para sessão pendente em staging (Two-Phase Replacement) ===
+    if (isPendingSession) {
+      if (rawStatus === 'connected' || rawStatus === 'open') {
+        const phone = data.phone || (data.user?.id ? this.extractPhoneFromJid(data.user.id) : undefined);
+
+        // 1. Promove a nova sessão para ativa no GpnConnection
+        await prisma.gpnConnection.update({
+          where: { organizationId },
+          data: {
+            sessionId: pending.newSessionId,
+            status: 'CONNECTED'
+          }
+        });
+
+        // 2. Atualiza metadados do canal de WhatsApp com o novo número e status CONECTADO
+        await WhatsAppLifecycleService.updateSessionStatus(organizationId, {
+          status: 'connected',
+          phone,
+          sessionId: pending.newSessionId
+        });
+
+        // 3. Encerra sessão anterior no GPN
+        if (org.gpnConnection && pending.previousSessionId) {
+          try {
+            const gpnConfig = WhatsAppLifecycleService.getGpnConfig(org.gpnConnection);
+            const provider = new GPNWhatsAppProvider({
+              ...gpnConfig,
+              sessionId: pending.previousSessionId
+            });
+            await provider.deleteSession(pending.previousSessionId).catch((err: any) => {
+              console.warn('[GPN Webhook] Falha ao encerrar sessão anterior no GPN:', err.message);
+            });
+          } catch (err: any) {
+            console.warn('[GPN Webhook] Erro ao instanciar provedor para encerrar sessão anterior:', err.message);
+          }
+        }
+
+        // 4. Registra AuditLog da conclusão da substituição
+        await prisma.auditLog.create({
+          data: {
+            organizationId,
+            userId: pending.userId || null,
+            action: 'WHATSAPP_NUMBER_REPLACED_COMPLETED',
+            entityType: 'WhatsAppChannel',
+            entityId: pending.newSessionId,
+            details: JSON.stringify({
+              previousSessionId: pending.previousSessionId,
+              newSessionId: pending.newSessionId,
+              phone: phone || null,
+              reason: pending.reason || null,
+              completedAt: new Date().toISOString()
+            })
+          }
+        });
+
+        // 5. Remove pendingWhatsAppReplacement de Organization.metadata
+        const currentOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
+        let latestMeta: any = {};
+        if (currentOrg?.metadata) {
+          try { latestMeta = JSON.parse(currentOrg.metadata); } catch {}
+        }
+        delete latestMeta.pendingWhatsAppReplacement;
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: { metadata: JSON.stringify(latestMeta) }
+        });
+
+        // 6. Resolve incidentes operacionais GPN pendentes
+        await WhatsAppLifecycleService.resolveGpnIncident(organizationId);
+      } else if (rawStatus === 'error' || rawStatus === 'failed') {
+        // Se a nova sessão falhar, a sessão anterior permanece intacta e o staging é limpo
+        await WhatsAppLifecycleService.cancelReplaceNumber(
+          organizationId,
+          pending.userId,
+          `Falha ao conectar novo número no gateway GPN (${rawStatus})`
+        );
+      } else if (rawStatus === 'qr' || rawStatus === 'waiting_qr') {
+        pending.qrCode = data.qr || data.qrcode || pending.qrCode;
+        pending.status = 'AGUARDANDO_QR';
+        metadata.pendingWhatsAppReplacement = pending;
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: { metadata: JSON.stringify(metadata) }
+        });
+      } else if (rawStatus === 'connecting') {
+        pending.status = 'CONECTANDO';
+        metadata.pendingWhatsAppReplacement = pending;
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: { metadata: JSON.stringify(metadata) }
+        });
+      }
+
+      return;
+    }
+
+    // === FLUXO 2: Evento para sessão corrente normal ===
     // Mapeamento de status GPN para status do Conecta
     let conectaStatus = 'UNKNOWN';
     if (rawStatus === 'connected' || rawStatus === 'open') {
@@ -297,6 +426,11 @@ export class GpnWebhooksController {
       phone,
       qr: data.qr || data.qrcode
     });
+
+    // Ao receber session.status: connected (recuperação), resolve incidentes operacionais pendentes
+    if (conectaStatus === 'CONNECTED') {
+      await WhatsAppLifecycleService.resolveGpnIncident(organizationId);
+    }
   }
 
   /**

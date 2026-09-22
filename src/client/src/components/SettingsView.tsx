@@ -25,7 +25,6 @@ interface ChannelStatus {
   connectedAt?: string | null;
   lastActivityAt?: string | null;
   qrCode?: string | null;
-  sessionId?: string | null;
   provider: 'GPN';
   isOperating: boolean;
   errorMessage?: string | null;

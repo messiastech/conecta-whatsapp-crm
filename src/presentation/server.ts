@@ -43,8 +43,18 @@ export function validateProductionEnvironment(): void {
       missing.push('ENCRYPTION_MASTER_KEY (obrigatório, mínimo 32 caracteres para AES-256-GCM)');
     }
 
-    if (process.env.WHATSAPP_PROVIDER === 'meta' && !process.env.META_WEBHOOK_VERIFY_TOKEN) {
-      missing.push('META_WEBHOOK_VERIFY_TOKEN (obrigatório em produção quando WHATSAPP_PROVIDER=meta)');
+    const whatsappProvider = (process.env.WHATSAPP_PROVIDER || '').toLowerCase();
+    if (whatsappProvider === 'meta') {
+      if (!process.env.META_WEBHOOK_VERIFY_TOKEN) {
+        missing.push('META_WEBHOOK_VERIFY_TOKEN (obrigatório em produção quando WHATSAPP_PROVIDER=meta)');
+      }
+    } else if (whatsappProvider === 'gpn' || process.env.REQUIRE_GPN_CREDENTIALS === 'true') {
+      if (!process.env.GPN_API_KEY) {
+        missing.push('GPN_API_KEY (obrigatório em produção para o provedor GPN)');
+      }
+      if (!process.env.GPN_API_URL) {
+        missing.push('GPN_API_URL (obrigatório em produção para o provedor GPN)');
+      }
     }
 
     if (process.env.VERTICAL_PROFILE === 'ACCOUNTING') {
@@ -55,6 +65,21 @@ export function validateProductionEnvironment(): void {
       }
       if (!hasPassword) {
         missing.push('YESHUA_DEMO_PASSWORD / YESHUA_ADMIN_PASSWORD (obrigatório para desk contábil Yeshua em produção)');
+      }
+
+      const gpnUrl = process.env.GPN_API_URL;
+      if (!gpnUrl || (!gpnUrl.startsWith('http://') && !gpnUrl.startsWith('https://'))) {
+        missing.push('GPN_API_URL (obrigatório e deve ser uma URL http/https válida em produção para ACCOUNTING)');
+      }
+
+      const gpnKey = process.env.GPN_API_KEY;
+      if (!gpnKey || gpnKey.trim().length === 0) {
+        missing.push('GPN_API_KEY (obrigatório em produção para ACCOUNTING)');
+      }
+
+      const gpnSecret = process.env.GPN_WEBHOOK_SECRET;
+      if (!gpnSecret || gpnSecret.length < 16) {
+        missing.push('GPN_WEBHOOK_SECRET (obrigatório, mínimo 16 caracteres em produção para ACCOUNTING)');
       }
     }
 

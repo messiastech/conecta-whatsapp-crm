@@ -84,6 +84,9 @@ describe('Suíte de Testes de Observabilidade e Prontidão em Produção (Cloud 
       process.env.VERTICAL_PROFILE = 'ACCOUNTING';
       process.env.YESHUA_DEMO_EMAIL = 'demo@yeshuacontabilidade.com.br';
       process.env.YESHUA_DEMO_PASSWORD = 'demo';
+      process.env.GPN_API_URL = 'https://gpn.yeshuacontabilidade.com.br';
+      process.env.GPN_API_KEY = 'gpn_production_api_key_32bytes_long!';
+      process.env.GPN_WEBHOOK_SECRET = 'gpn_production_webhook_secret_32bytes!';
       delete process.env.WHATSAPP_PROVIDER;
     };
 
@@ -138,6 +141,28 @@ describe('Suíte de Testes de Observabilidade e Prontidão em Produção (Cloud 
       delete process.env.YESHUA_DEMO_PASSWORD;
       delete process.env.YESHUA_ADMIN_PASSWORD;
       expect(() => validateProductionEnvironment()).toThrow(/YESHUA_DEMO_PASSWORD/);
+    });
+
+    it('deve abortar startup se GPN_API_URL, GPN_API_KEY ou GPN_WEBHOOK_SECRET faltarem na vertical ACCOUNTING em produção', () => {
+      setValidProductionEnv();
+      delete process.env.GPN_API_URL;
+      expect(() => validateProductionEnvironment()).toThrow(/GPN_API_URL/);
+
+      setValidProductionEnv();
+      process.env.GPN_API_URL = 'ftp://invalid-protocol';
+      expect(() => validateProductionEnvironment()).toThrow(/GPN_API_URL/);
+
+      setValidProductionEnv();
+      delete process.env.GPN_API_KEY;
+      expect(() => validateProductionEnvironment()).toThrow(/GPN_API_KEY/);
+
+      setValidProductionEnv();
+      delete process.env.GPN_WEBHOOK_SECRET;
+      expect(() => validateProductionEnvironment()).toThrow(/GPN_WEBHOOK_SECRET/);
+
+      setValidProductionEnv();
+      process.env.GPN_WEBHOOK_SECRET = 'short_secret';
+      expect(() => validateProductionEnvironment()).toThrow(/GPN_WEBHOOK_SECRET/);
     });
 
     it('deve abortar startup se WHATSAPP_PROVIDER=meta e META_WEBHOOK_VERIFY_TOKEN faltar', () => {
