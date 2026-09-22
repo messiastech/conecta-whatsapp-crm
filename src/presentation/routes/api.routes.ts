@@ -48,9 +48,9 @@ export function createApiRouter(
     res.json({
       verticalProfile: vertical,
       allowPublicSignup,
-      brandName: process.env.BRAND_NAME || (isAccounting ? 'YESHUA AI CLIENT DESK' : 'Conecta CRM'),
-      brandSubtitle: process.env.BRAND_SUBTITLE || (isAccounting ? 'powered by MEGA CORE' : 'SaaS Multi-Tenant & IA'),
-      demoUserEmail: isAccounting ? (process.env.YESHUA_DEMO_EMAIL || 'demo@yeshuacontabilidade.com.br') : undefined
+      brandName: process.env.BRAND_NAME || (isAccounting ? 'YESHUA DESK IGREJAS' : 'Conecta CRM'),
+      brandSubtitle: process.env.BRAND_SUBTITLE || (isAccounting ? 'Contabilidade Especializada para Igrejas e Terceiro Setor' : 'SaaS Multi-Tenant & IA'),
+      demoUserEmail: isAccounting ? (process.env.YESHUA_ADMIN_EMAIL || process.env.YESHUA_DEMO_EMAIL || 'admin@yeshuacontabilidade.com.br') : undefined
     });
   });
 
@@ -100,6 +100,9 @@ export function createApiRouter(
   router.get('/persons', requireAuth, requireOrganization, (req, res) => personsController.list(req, res));
   router.post('/persons', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), (req, res) =>
     personsController.create(req, res)
+  );
+  router.post('/persons/import-churches', requireAuth, requireOrganization, requireRole(['OWNER', 'ADMIN', 'OPERATOR']), upload.single('file'), (req, res) =>
+    personsController.importChurches(req, res)
   );
   router.get('/persons/:id', requireAuth, requireOrganization, (req, res) => personsController.getById(req, res));
   router.get('/persons/:id/timeline', requireAuth, requireOrganization, (req, res) => personsController.getTimeline(req, res));

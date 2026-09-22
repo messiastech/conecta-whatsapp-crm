@@ -311,6 +311,34 @@ export const api = {
     return res.json();
   },
 
+  async importChurches(file: File): Promise<{
+    totalRows: number;
+    totalImported: number;
+    totalUpdated: number;
+    duplicatesIgnored: number;
+    invalidRows: Array<{ rowNumber: number; rawRow: any; error: string }>;
+    importedChurches: Array<{
+      id: string;
+      name: string;
+      normalizedPhone: string;
+      cnpj?: string;
+      isUpdate: boolean;
+    }>;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await apiFetch(`${API_BASE}/persons/import-churches`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao importar planilha de igrejas');
+    }
+    return res.json();
+  },
+
   // --- Tasks & Pastoral Follow-Up ---
   async getTasks(status?: string, priority?: string): Promise<FollowUpTaskItem[]> {
     const params = new URLSearchParams();

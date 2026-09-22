@@ -271,34 +271,44 @@ export class ProcessInboundMessageUseCase {
     let taskTitle: string;
     let taskDescription: string;
 
-    if (verticalProfile === 'ACCOUNTING') {
+    if (verticalProfile === 'ACCOUNTING' || verticalProfile === 'CHURCH' || verticalProfile === 'YESHUA_CHURCHES') {
       // Extrai contexto do cliente a partir de person.notes ou person.name
       let clientName = person.name;
       let companyName = '';
+      let churchName = '';
+      let isChurch = verticalProfile === 'CHURCH' || verticalProfile === 'YESHUA_CHURCHES';
 
       if (person.notes) {
         try {
           const parsed = JSON.parse(person.notes);
           if (parsed.companyName) companyName = parsed.companyName;
+          if (parsed.churchName) churchName = parsed.churchName;
           if (parsed.clientName) clientName = parsed.clientName;
+          if (parsed.pastorName && !clientName) clientName = parsed.pastorName;
+          if (parsed.isChurch !== undefined) isChurch = Boolean(parsed.isChurch);
         } catch {
           companyName = person.notes;
         }
       }
 
-      if (!companyName) {
+      if (!companyName && !churchName) {
         const match = person.name.match(/^(.*?)\s*\((.*?)\)$/);
         if (match) {
           clientName = match[1].trim();
-          companyName = match[2].trim();
+          if (isChurch || /igreja|templo|minist(e|é)rio|comunidade/i.test(match[2])) {
+            churchName = match[2].trim();
+            isChurch = true;
+          } else {
+            companyName = match[2].trim();
+          }
         }
       }
 
-      // Análise Contábil / Fiscal da Yeshua
-      const accResult = AccountingAIPolicy.analyze(dto.text, {
-        clientName,
-        companyName
-      });
+      // Análise Contábil / Eclesiástica da Yeshua
+      const accResult = isChurch
+        ? AccountingAIPolicy.analyzeChurch(dto.text, { clientName, churchName })
+        : AccountingAIPolicy.analyze(dto.text, { clientName, companyName });
+
       category = accResult.category;
       reason = accResult.reasonSummary;
       intent = accResult.intent;
@@ -310,10 +320,14 @@ export class ProcessInboundMessageUseCase {
       requiresHumanAttention = accResult.requiresAttention;
       suggestedReply = accResult.suggestedReply;
       nextAction = accResult.nextAction;
-      modelUsed = 'YESHUA_ACCOUNTING_AI';
+      modelUsed = isChurch ? 'YESHUA_CHURCH_AI' : 'YESHUA_ACCOUNTING_AI';
       rawResponse = JSON.stringify(accResult);
-      taskTitle = `Pendência Contábil: ${person.name} (${accResult.categoryLabel})`;
-      taskDescription = `Assunto: ${accResult.reasonSummary}\nAção Contábil Recomendada: ${accResult.suggestedAction}`;
+      taskTitle = isChurch
+        ? `Pendência Eclesiástica: ${person.name} (${accResult.categoryLabel})`
+        : `Pendência Contábil: ${person.name} (${accResult.categoryLabel})`;
+      taskDescription = isChurch
+        ? `Assunto: ${accResult.reasonSummary}\nAção Recomendada: ${accResult.suggestedAction}`
+        : `Assunto: ${accResult.reasonSummary}\nAção Contábil Recomendada: ${accResult.suggestedAction}`;
     } else {
       // Fluxo DEFAULT (Análise de Ausência Pastoral / Eventos)
       const aiResult = await this.aiService.classifyAbsence(dto.text, {

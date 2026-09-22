@@ -18,6 +18,8 @@
     "seed": "tsx src/infrastructure/database/seed.ts",
     "seed:yeshua-demo": "tsx src/infrastructure/database/seed-yeshua-demo.ts",
     "seed:yeshua-demo:prod": "node dist/infrastructure/database/seed-yeshua-demo.js",
+    "init:prod": "tsx src/infrastructure/database/init-yeshua-production.ts",
+    "release:prod": "prisma generate && prisma db push --skip-generate && npm run init:prod",
     "release:yeshua": "prisma generate && prisma db push && npm run seed:yeshua-demo",
     "start:yeshua-release": "prisma generate && prisma db push && npm run seed:yeshua-demo && npm start",
     "test:smoke:yeshua": "tsx tests/smoke-yeshua-e2e.ts",

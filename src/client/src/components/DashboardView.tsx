@@ -90,11 +90,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
-            {isAccounting ? 'Dashboard de Atendimento & Inteligência Contábil' : 'Dashboard de Relacionamento Comunitário'}
+            {isAccounting ? 'Dashboard de Atendimento & Gestão para Igrejas' : 'Dashboard de Relacionamento Comunitário'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             {isAccounting
-              ? 'Métricas operacionais, SLA de resposta e triagem tributária automatizada'
+              ? 'Métricas operacionais, SLA de resposta e triagem contábil/fiscal especializada para igrejas'
               : 'Métricas unificadas e inteligência de acolhimento pós-evento'}
           </p>
         </div>
@@ -106,7 +106,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
                 onClick={() => onNavigate('persons')}
                 className="px-3.5 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors"
               >
-                Ver Clientes
+                Ver Igrejas & Clientes
               </button>
               <button
                 onClick={() => onNavigate('conversations')}
@@ -136,11 +136,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Presença / Clientes */}
+        {/* Card 1: Igrejas na Carteira / Presença */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {isAccounting ? 'Base de Clientes' : 'Taxa de Presença'}
+              {isAccounting ? 'Igrejas na Carteira' : 'Taxa de Presença'}
             </span>
             <div className={`w-8 h-8 rounded-lg ${isAccounting ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'} flex items-center justify-center`}>
               {isAccounting ? <Users className="w-4 h-4" /> : <CalendarCheck className="w-4 h-4" />}
@@ -152,7 +152,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
             </div>
             <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
               {isAccounting ? (
-                <span className="font-semibold text-indigo-700">{metrics.totalPersons} clientes ativos</span>
+                <span className="font-semibold text-indigo-700">{metrics.totalPersons} igrejas ativas na carteira</span>
               ) : (
                 <>
                   <span className="font-semibold text-emerald-700">{metrics.totalPresent} presentes</span>
@@ -163,19 +163,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
           </div>
         </div>
 
-        {/* Card 2: Taxa Real de Resposta */}
+        {/* Card 2: Atendimentos com IA / Taxa Real de Resposta */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taxa de Resposta</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              {isAccounting ? 'Atendimentos com IA' : 'Taxa de Resposta'}
+            </span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
               <MessageSquareReply className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-slate-900">{metrics.responseRate}%</div>
+            <div className="text-2xl font-bold text-slate-900">
+              {isAccounting ? (metrics.totalMessagesReceived || 0) : `${metrics.responseRate}%`}
+            </div>
             <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-              <span className="font-semibold text-blue-700">{metrics.uniqueRespondersCount || metrics.totalMessagesReceived} contatos</span>
-              <span>responderam</span>
+              {isAccounting ? (
+                <>
+                  <span className="font-semibold text-blue-700">{metrics.uniqueRespondersCount || metrics.totalMessagesReceived} conversas</span>
+                  <span>com triagem automatizada</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold text-blue-700">{metrics.uniqueRespondersCount || metrics.totalMessagesReceived} contatos</span>
+                  <span>responderam</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -187,7 +200,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-rose-600">
-              {isAccounting ? 'Triagem Fiscal IA' : 'Atenção Pastoral'}
+              {isAccounting ? 'Alertas & Atenção Técnica' : 'Atenção Pastoral'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
               <AlertTriangle className="w-4 h-4" />
@@ -196,19 +209,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
           <div className="mt-3">
             <div className="text-2xl font-bold text-rose-600">{metrics.pendingAttentionCount}</div>
             <div className="text-xs text-slate-500 mt-1">
-              {isAccounting ? 'Atendimentos sinalizados para atenção técnica' : 'Conversas sinalizadas para acolhimento humano'}
+              {isAccounting ? 'Atendimentos sinalizados para contador ou urgência fiscal' : 'Conversas sinalizadas para acolhimento humano'}
             </div>
           </div>
         </div>
 
-        {/* Card 4: Tarefas & Follow-Ups Pendentes */}
+        {/* Card 4: Pendências Tributárias/Cartoriais */}
         <div
           onClick={() => onNavigate('tasks')}
           className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between cursor-pointer hover:border-amber-300 transition-colors group"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-amber-600">
-              {isAccounting ? 'Pendências Abertas' : 'Tarefas Pendentes'}
+              {isAccounting ? 'Pendências Tributárias/Cartoriais' : 'Tarefas Pendentes'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
               <ClipboardList className="w-4 h-4" />
@@ -217,7 +230,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ metrics, onNavigat
           <div className="mt-3">
             <div className="text-2xl font-bold text-amber-600">{metrics.pendingFollowUpsCount}</div>
             <div className="text-xs text-slate-500 mt-1">
-              {isAccounting ? 'Pendências fiscais e societárias ativas' : 'Acompanhamentos gerados pela triagem de IA'}
+              {isAccounting ? 'Pendências fiscais, estatutárias e cartoriais de igrejas' : 'Acompanhamentos gerados pela triagem de IA'}
             </div>
           </div>
         </div>

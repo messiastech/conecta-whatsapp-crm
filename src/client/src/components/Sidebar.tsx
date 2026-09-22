@@ -52,7 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'persons',
-          label: 'Clientes',
+          label: 'Igrejas & Clientes',
           icon: Users,
           badge: null
         },
@@ -65,7 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'tasks',
-          label: 'Pendências',
+          label: 'Pendências Fiscais',
           icon: ClipboardList,
           badge: pendingTasksCount > 0 ? `${pendingTasksCount} pendentes` : null,
           badgeColor: 'bg-amber-500 text-white'
@@ -75,13 +75,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Configurações',
           icon: Settings,
           badge: null
-        },
-        {
-          id: 'sandbox',
-          label: 'Simulador WhatsApp',
-          icon: Smartphone,
-          badge: 'Sandbox',
-          badgeColor: 'bg-emerald-100 text-emerald-800'
         }
       ]
     : [
@@ -157,10 +150,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="overflow-hidden">
             <h1 className="font-bold text-white tracking-wide text-xs leading-tight truncate">
-              {isAccounting ? (activeOrg?.brandName || 'YESHUA AI CLIENT DESK') : 'Conecta CRM'}
+              {isAccounting ? (activeOrg?.brandName || 'YESHUA DESK IGREJAS') : 'Conecta CRM'}
             </h1>
             <span className={`text-[10px] font-medium ${isAccounting ? 'text-indigo-400' : 'text-emerald-400'} truncate block`}>
-              {isAccounting ? (activeOrg?.brandSubtitle || 'powered by MEGA CORE') : 'SaaS Multi-Tenant'}
+              {isAccounting ? (activeOrg?.brandSubtitle || 'Contabilidade Especializada para Igrejas e Terceiro Setor') : 'SaaS Multi-Tenant'}
             </span>
           </div>
         </div>

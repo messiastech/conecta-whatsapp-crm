@@ -205,11 +205,11 @@ export const App: React.FC = () => {
             <span className="text-sm font-bold text-slate-900">
               {activeOrg?.verticalProfile === 'ACCOUNTING' ? (
                 <>
-                  {currentTab === 'dashboard' && 'Dashboard de Atendimento & Inteligência Contábil'}
-                  {currentTab === 'persons' && 'Clientes & Histórico Consultivo (CRM)'}
-                  {currentTab === 'conversations' && 'Atendimentos & Triagem Fiscal IA'}
-                  {currentTab === 'tasks' && 'Pendências & Ações Fiscais'}
-                  {currentTab === 'settings' && 'Configurações do Escritório & IA'}
+                  {currentTab === 'dashboard' && 'Dashboard de Atendimento & Gestão para Igrejas'}
+                  {currentTab === 'persons' && 'Igrejas & Clientes (CRM)'}
+                  {currentTab === 'conversations' && 'Atendimentos & Triagem Especializada'}
+                  {currentTab === 'tasks' && 'Pendências Fiscais & Cartoriais'}
+                  {currentTab === 'settings' && 'Configurações da Assessoria & IA'}
                   {currentTab === 'sandbox' && 'Emulador Sandbox WhatsApp (Yeshua Desk)'}
                 </>
               ) : (
@@ -230,8 +230,8 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-3">
             {activeOrg?.verticalProfile === 'ACCOUNTING' ? (
               <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200 text-xs font-semibold">
-                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                <span>Yeshua AI Desk (Sandbox Ativo)</span>
+                <span className={`w-2 h-2 rounded-full ${activeOrg.isMock ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
+                <span>{activeOrg.brandName || 'YESHUA DESK IGREJAS'} {activeOrg.isMock ? '(Sandbox)' : '(Produção)'}</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 text-xs font-semibold">

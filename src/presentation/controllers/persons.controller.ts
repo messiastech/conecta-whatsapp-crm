@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.client.js';
 import { PhoneNumber } from '../../domain/value-objects/phone-number.vo.js';
+import { ImportChurchClientsUseCase } from '../../application/use-cases/import-church-clients.use-case.js';
 
 export class PersonsController {
   async list(req: Request, res: Response): Promise<void> {
@@ -327,6 +328,29 @@ export class PersonsController {
       res.status(201).json(person);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  }
+
+  async importChurches(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = req.organizationId!;
+      const file = req.file;
+
+      if (!file) {
+        res.status(400).json({ error: 'Arquivo de planilha (.csv ou .xlsx) é obrigatório' });
+        return;
+      }
+
+      const useCase = new ImportChurchClientsUseCase();
+      const result = await useCase.execute({
+        organizationId,
+        fileBuffer: file.buffer,
+        filename: file.originalname
+      });
+
+      res.status(200).json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   }
 }

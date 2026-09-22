@@ -90,17 +90,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onAuthSuccess }) => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              {isAccounting ? (config.brandName || 'YESHUA AI CLIENT DESK') : 'Conecta CRM'}
+              {isAccounting ? (config.brandName || 'YESHUA DESK IGREJAS') : 'Conecta CRM'}
             </h1>
             <p className={`text-xs ${isAccounting ? 'text-blue-400' : 'text-emerald-400'} font-medium tracking-wide uppercase flex items-center gap-1`}>
-              <Sparkles className="w-3 h-3" /> {isAccounting ? (config.brandSubtitle || 'powered by MEGA CORE') : 'SaaS Multi-Tenant & IA'}
+              <Sparkles className="w-3 h-3" /> {isAccounting ? (config.brandSubtitle || 'Contabilidade Especializada para Igrejas e Terceiro Setor') : 'SaaS Multi-Tenant & IA'}
             </p>
           </div>
         </div>
 
         <h2 className="mt-6 text-center text-xl font-medium text-slate-300">
           {isAccounting
-            ? 'Ambiente de Demonstração Yeshua Contabilidade'
+            ? 'Plataforma Operacional Yeshua Desk Igrejas'
             : isSignUp
             ? 'Crie sua conta e seu Workspace'
             : 'Entre no seu Workspace'}
@@ -164,7 +164,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onAuthSuccess }) => {
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder={isAccounting ? 'demo@yeshuacontabilidade.com.br' : 'pastor@suacomunidade.org'}
+                  placeholder={isAccounting ? 'admin@yeshuacontabilidade.com.br' : 'pastor@suacomunidade.org'}
                   className={`w-full pl-10 pr-4 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 ${isAccounting ? 'focus:ring-blue-500' : 'focus:ring-emerald-500'} text-sm`}
                 />
               </div>
@@ -196,7 +196,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onAuthSuccess }) => {
                 'Processando...'
               ) : isAccounting ? (
                 <>
-                  Acessar Yeshua Client Desk <ArrowRight className="w-4 h-4" />
+                  Acessar Yeshua Desk Igrejas <ArrowRight className="w-4 h-4" />
                 </>
               ) : isSignUp ? (
                 <>
@@ -226,7 +226,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onAuthSuccess }) => {
           ) : isAccounting ? (
             <div className="mt-6 pt-6 border-t border-slate-700/60 text-center">
               <p className="text-xs text-slate-400 font-medium">
-                Demonstração Pública Controlada • Credenciais fornecidas pela equipe Yeshua
+                Yeshua Contabilidade • Soluções Fiscais e Gestão para Igrejas
               </p>
             </div>
           ) : null}
