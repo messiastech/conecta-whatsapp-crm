@@ -48,11 +48,13 @@ export function validateProductionEnvironment(): void {
     }
 
     if (process.env.VERTICAL_PROFILE === 'ACCOUNTING') {
-      if (!process.env.YESHUA_DEMO_EMAIL) {
-        missing.push('YESHUA_DEMO_EMAIL (obrigatório para demo contábil Yeshua em produção)');
+      const hasEmail = process.env.YESHUA_ADMIN_EMAIL || process.env.YESHUA_DEMO_EMAIL;
+      const hasPassword = process.env.YESHUA_ADMIN_PASSWORD || process.env.YESHUA_DEMO_PASSWORD;
+      if (!hasEmail) {
+        missing.push('YESHUA_DEMO_EMAIL / YESHUA_ADMIN_EMAIL (obrigatório para desk contábil Yeshua em produção)');
       }
-      if (!process.env.YESHUA_DEMO_PASSWORD) {
-        missing.push('YESHUA_DEMO_PASSWORD (obrigatório para demo contábil Yeshua em produção)');
+      if (!hasPassword) {
+        missing.push('YESHUA_DEMO_PASSWORD / YESHUA_ADMIN_PASSWORD (obrigatório para desk contábil Yeshua em produção)');
       }
     }
 

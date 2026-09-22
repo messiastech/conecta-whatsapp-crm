@@ -3,24 +3,24 @@
 # Região GRU (São Paulo), SSL Automático, Release Command
 # =======================================================
 
-app = "yeshua-cloud-demo"
+app = "yeshua-desk-igrejas"
 primary_region = "gru"
 
 [build]
   dockerfile = "Dockerfile"
 
 [deploy]
-  release_command = "npx prisma db push --skip-generate --accept-data-loss && npm run seed:yeshua-demo:prod"
+  release_command = "npx prisma db push --skip-generate --accept-data-loss && npm run init:prod"
 
 [env]
   NODE_ENV = "production"
   PORT = "3000"
   VERTICAL_PROFILE = "ACCOUNTING"
   ALLOW_PUBLIC_SIGNUP = "false"
-  BRAND_NAME = "YESHUA AI CLIENT DESK"
-  BRAND_SUBTITLE = "powered by MEGA CORE"
+  BRAND_NAME = "YESHUA DESK IGREJAS"
+  BRAND_SUBTITLE = "Contabilidade Especializada para Igrejas e Terceiro Setor"
   WHATSAPP_PROVIDER = "mock"
-  YESHUA_DEMO_EMAIL = "demo@yeshuacontabilidade.com.br"
+  YESHUA_ADMIN_EMAIL = "admin@yeshuacontabilidade.com.br"
 
 [http_service]
   internal_port = 3000

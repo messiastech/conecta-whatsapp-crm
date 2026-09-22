@@ -5,15 +5,13 @@
 
 services:
   - type: web
-    name: yeshua-cloud-demo
+    name: yeshua-desk-igrejas
     env: node
     plan: free
     region: ohio
     buildCommand: npm install && npx prisma generate && npm run build
-    # preDeployCommand executa migrações/push e seed antes do tráfego ser roteado (planos pagos)
-    preDeployCommand: npm run release:yeshua
-    # startCommand garante migrações e seed mesmo no plano gratuito do Render
-    startCommand: npm run start:yeshua-release
+    preDeployCommand: npm run release:prod
+    startCommand: npm run release:prod && npm start
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -26,9 +24,9 @@ services:
       - key: ALLOW_PUBLIC_SIGNUP
         value: "false"
       - key: BRAND_NAME
-        value: YESHUA AI CLIENT DESK
+        value: YESHUA DESK IGREJAS
       - key: BRAND_SUBTITLE
-        value: powered by MEGA CORE
+        value: Contabilidade Especializada para Igrejas e Terceiro Setor
       - key: DATABASE_URL
         sync: false
       - key: BETTER_AUTH_SECRET
@@ -41,7 +39,7 @@ services:
         sync: false
       - key: WHATSAPP_PROVIDER
         value: mock
-      - key: YESHUA_DEMO_EMAIL
-        value: demo@yeshuacontabilidade.com.br
-      - key: YESHUA_DEMO_PASSWORD
+      - key: YESHUA_ADMIN_EMAIL
+        value: admin@yeshuacontabilidade.com.br
+      - key: YESHUA_ADMIN_PASSWORD
         sync: false
