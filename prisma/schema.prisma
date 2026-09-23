@@ -452,12 +452,19 @@ model GpnWebhookEvent {
   organizationId String
   eventId        String       // x-gpn-event-id do GPN Core Gateway
   eventType      String       // message.inbound, message.ack, session.status
+  status         String       @default("RECEIVED") // RECEIVED, PROCESSING, PROCESSED, FAILED
+  attempts       Int          @default(0)
+  lastError      String?      @db.Text
+  payloadJson    String?      @db.Text
   processedAt    DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, eventId])
   @@index([organizationId])
+  @@index([status])
 }
 
 // ==========================================

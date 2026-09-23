@@ -126,26 +126,92 @@ export class GpnWebhooksController {
         return;
       }
 
-      // Verificação de idempotência (tenant-aware)
-      try {
-        await prisma.gpnWebhookEvent.create({
-          data: {
+      // 1. Inbox Durável no Neon (Tenant-Aware)
+      // Status possíveis: RECEIVED | PROCESSING | PROCESSED | FAILED
+      let webhookRecord = await prisma.gpnWebhookEvent.findUnique({
+        where: {
+          organizationId_eventId: {
             organizationId,
-            eventId,
-            eventType
+            eventId
           }
-        });
-      } catch (err: any) {
-        // Unique constraint violation = evento já processado
-        if (err.code === 'P2002') {
+        }
+      });
+
+      if (webhookRecord) {
+        // PROCESSED = no-op garantido
+        if (webhookRecord.status === 'PROCESSED') {
           res.status(200).json({ received: true, duplicate: true });
           return;
         }
-        throw err;
+
+        // PROCESSING: verificar se é ativo ou antigo/stale (recovery threshold: > 2 minutos)
+        if (webhookRecord.status === 'PROCESSING') {
+          const STALE_THRESHOLD_MS = 2 * 60 * 1000;
+          const isStale = Date.now() - new Date(webhookRecord.updatedAt).getTime() > STALE_THRESHOLD_MS;
+          if (!isStale) {
+            // Em processamento ativo no momento, responder 200 OK sem duplicar execução
+            res.status(200).json({ received: true, duplicate: true });
+            return;
+          }
+          // PROCESSING antigo: segue para recuperação / retry abaixo
+        }
+
+        // Para RECEIVED, FAILED ou PROCESSING antigo: atualiza payload e timestamp
+        webhookRecord = await prisma.gpnWebhookEvent.update({
+          where: { id: webhookRecord.id },
+          data: {
+            payloadJson: rawBody,
+            updatedAt: new Date()
+          }
+        });
+      } else {
+        // Persistir novo evento como RECEIVED antes do HTTP 200
+        try {
+          webhookRecord = await prisma.gpnWebhookEvent.create({
+            data: {
+              organizationId,
+              eventId,
+              eventType,
+              status: 'RECEIVED',
+              attempts: 0,
+              payloadJson: rawBody
+            }
+          });
+        } catch (err: any) {
+          if (err.code === 'P2002') {
+            const existing = await prisma.gpnWebhookEvent.findUnique({
+              where: {
+                organizationId_eventId: {
+                  organizationId,
+                  eventId
+                }
+              }
+            });
+            if (existing?.status === 'PROCESSED') {
+              res.status(200).json({ received: true, duplicate: true });
+              return;
+            }
+            webhookRecord = existing;
+          } else {
+            throw err;
+          }
+        }
       }
 
-      // Responde 200 OK imediatamente
+      // Responde 200 OK imediatamente após a persistência durável no Neon
       res.status(200).json({ received: true });
+
+      if (!webhookRecord) return;
+
+      // Transição para PROCESSING e incremento de tentativas
+      await prisma.gpnWebhookEvent.update({
+        where: { id: webhookRecord.id },
+        data: {
+          status: 'PROCESSING',
+          attempts: { increment: 1 },
+          updatedAt: new Date()
+        }
+      });
 
       // Processa o evento em background
       try {
@@ -162,8 +228,27 @@ export class GpnWebhooksController {
           default:
             console.warn(`[GPN Webhook] Evento desconhecido ignorado: ${eventType}`);
         }
+
+        // Sucesso: marca como PROCESSED
+        await prisma.gpnWebhookEvent.update({
+          where: { id: webhookRecord.id },
+          data: {
+            status: 'PROCESSED',
+            lastError: null,
+            processedAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
       } catch (processError: any) {
         console.error(`[GPN Webhook] Erro ao processar evento ${eventType} (${eventId}):`, processError.message);
+        await prisma.gpnWebhookEvent.update({
+          where: { id: webhookRecord.id },
+          data: {
+            status: 'FAILED',
+            lastError: processError.message || String(processError),
+            updatedAt: new Date()
+          }
+        });
       }
     } catch (err: any) {
       console.error('[GPN Webhook] Erro geral no processamento:', err.message);

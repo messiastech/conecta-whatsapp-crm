@@ -50,6 +50,15 @@ export class MediaStorageService {
       throw new Error('[STORAGE_SECURITY] organizationId é obrigatório para isolamento multi-tenant.');
     }
 
+    // Filesystem local somente dev/test.
+    // Produção sem storage persistente => MEDIA_STORAGE_UNAVAILABLE. Não provisionar storage agora.
+    if (process.env.NODE_ENV === 'production' && !process.env.PERSISTENT_STORAGE_ENABLED) {
+      throw new Error(
+        '[MEDIA_STORAGE_UNAVAILABLE] Storage persistente de mídias não configurado para ambiente de produção. ' +
+        'O filesystem local é permitido unicamente em ambientes de dev/test.'
+      );
+    }
+
     const fileHash = params.sha256 || crypto.createHash('sha256').update(buffer).digest('hex');
     const sanitizedName = this.sanitizeFileName(originalName);
 
@@ -81,6 +90,12 @@ export class MediaStorageService {
    * Lê o arquivo verificando estritamente o isolamento de tenant.
    */
   public static async getFile(storageKey: string, organizationId: string): Promise<Buffer> {
+    if (process.env.NODE_ENV === 'production' && !process.env.PERSISTENT_STORAGE_ENABLED) {
+      throw new Error(
+        '[MEDIA_STORAGE_UNAVAILABLE] Storage persistente de mídias não configurado para ambiente de produção.'
+      );
+    }
+
     if (!storageKey.includes(`tenants/${organizationId}/`)) {
       throw new Error('[STORAGE_SECURITY] Violação de segurança: acesso cruzado a mídia de outro tenant.');
     }

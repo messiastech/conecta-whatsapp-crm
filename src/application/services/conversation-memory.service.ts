@@ -65,12 +65,26 @@ export class ConversationMemoryService {
     personId: string,
     conversationId: string
   ): Promise<ConversationMemoryContext> {
-    // 1. Obtém ou cria atomicamente o registro de memória
+    // 1. Obtém ou cria atomicamente o registro de memória com validação estrita de tenant
     let memory = await prisma.conversationMemory.findUnique({
       where: { conversationId }
     });
 
-    if (!memory) {
+    if (memory) {
+      // Validação estrita multi-tenant: zero acesso cross-tenant
+      if (memory.organizationId !== organizationId) {
+        throw new Error(
+          `[SECURITY_CROSS_TENANT] Violação de segurança: tentativa de carregar memória de outra organização ` +
+          `(esperada: "${organizationId}", memória pertence a: "${memory.organizationId}").`
+        );
+      }
+      if (personId && memory.personId !== personId) {
+        throw new Error(
+          `[SECURITY_CROSS_TENANT] Violação de segurança: tentativa de carregar memória de outra pessoa ` +
+          `(esperada: "${personId}", memória vinculada a: "${memory.personId}").`
+        );
+      }
+    } else {
       memory = await prisma.conversationMemory.create({
         data: {
           organizationId,
@@ -194,13 +208,21 @@ export class ConversationMemoryService {
   static async updateAfterInbound(
     conversationId: string,
     inboundMessageId: string,
-    updates?: MemoryUpdates
+    updates?: MemoryUpdates,
+    organizationId?: string
   ): Promise<void> {
     const memory = await prisma.conversationMemory.findUnique({
       where: { conversationId }
     });
 
     if (!memory) return;
+
+    if (organizationId && memory.organizationId !== organizationId) {
+      throw new Error(
+        `[SECURITY_CROSS_TENANT] Violação de segurança: tentativa de atualizar memória de outra organização ` +
+        `(esperada: "${organizationId}", memória pertence a: "${memory.organizationId}").`
+      );
+    }
 
     let facts: MemoryFacts = {};
     let openItems: MemoryOpenItem[] = [];
@@ -267,13 +289,21 @@ export class ConversationMemoryService {
   static async updateAfterOutbound(
     conversationId: string,
     outboundMessageId: string,
-    updates?: MemoryUpdates
+    updates?: MemoryUpdates,
+    organizationId?: string
   ): Promise<void> {
     const memory = await prisma.conversationMemory.findUnique({
       where: { conversationId }
     });
 
     if (!memory) return;
+
+    if (organizationId && memory.organizationId !== organizationId) {
+      throw new Error(
+        `[SECURITY_CROSS_TENANT] Violação de segurança: tentativa de atualizar memória de outra organização ` +
+        `(esperada: "${organizationId}", memória pertence a: "${memory.organizationId}").`
+      );
+    }
 
     let facts: MemoryFacts = {};
     let openItems: MemoryOpenItem[] = [];
@@ -306,13 +336,21 @@ export class ConversationMemoryService {
   static async summarizeIfNeeded(
     conversationId: string,
     inboundText: string,
-    outboundText?: string
+    outboundText?: string,
+    organizationId?: string
   ): Promise<void> {
     const memory = await prisma.conversationMemory.findUnique({
       where: { conversationId }
     });
 
     if (!memory) return;
+
+    if (organizationId && memory.organizationId !== organizationId) {
+      throw new Error(
+        `[SECURITY_CROSS_TENANT] Violação de segurança: tentativa de resumir memória de outra organização ` +
+        `(esperada: "${organizationId}", memória pertence a: "${memory.organizationId}").`
+      );
+    }
 
     // Se o summary estiver vazio, inicializa com o primeiro diálogo
     let currentSummary = memory.summary || '';

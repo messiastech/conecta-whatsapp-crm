@@ -563,12 +563,12 @@ export class ProcessInboundMessageUseCase {
         urgency = accResult.urgency;
         priority = accResult.priority;
         summary = accResult.reasonSummary;
-        requiresHumanAttention = accResult.requiresAttention || isEscalation;
+        autopilotDecision = 'HUMAN_ESCALATION';
+        requiresHumanAttention = true;
         suggestedReply = accResult.suggestedReply;
-        nextAction = accResult.nextAction;
+        nextAction = accResult.nextAction || 'REQUIRE_HUMAN_INTERVENTION';
         modelUsed = isChurch ? 'YESHUA_CHURCH_AI' : 'YESHUA_ACCOUNTING_AI';
         rawResponse = JSON.stringify(accResult);
-        autopilotDecision = isEscalation ? 'HUMAN_ESCALATION' : 'AUTO_REPLY';
       }
 
       taskTitle = isChurch
@@ -673,18 +673,22 @@ export class ProcessInboundMessageUseCase {
             {
               ...aiReplyResult.memoryUpdates,
               facts: mergedFacts
-            }
+            },
+            dto.organizationId
           );
 
           if (sendResult.success) {
             await ConversationMemoryService.updateAfterOutbound(
               conversation.id,
-              outboundMsg.id
+              outboundMsg.id,
+              undefined,
+              dto.organizationId
             );
             await ConversationMemoryService.summarizeIfNeeded(
               conversation.id,
               (rawText || initialContent).slice(0, 80),
-              suggestedReply
+              suggestedReply,
+              dto.organizationId
             );
             requiresHumanAttention = false;
           }
@@ -755,11 +759,14 @@ export class ProcessInboundMessageUseCase {
           {
             ...aiReplyResult?.memoryUpdates,
             facts: mergedFacts
-          }
+          },
+          dto.organizationId
         );
         await ConversationMemoryService.summarizeIfNeeded(
           conversation.id,
-          (rawText || initialContent).slice(0, 80)
+          (rawText || initialContent).slice(0, 80),
+          undefined,
+          dto.organizationId
         );
       }
     } else {

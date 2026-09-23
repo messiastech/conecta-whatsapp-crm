@@ -43,18 +43,24 @@ export class AIProviderFactory {
     }
 
     const isYeshuaTenant =
-      verticalProfile === 'ACCOUNTING' ||
       org.name?.toLowerCase().includes('yeshua') ||
       org.slug?.toLowerCase().includes('yeshua');
 
     const settings = org.settings;
-
-    // Resolução do provedor:
-    // Padrão do sistema é SEMPRE 'GEMINI'
-    // Para o tenant Yeshua, reforça-se que DEEPSEEK só é ativado se houver configuração explícita e intencional no banco.
     let targetProvider: SupportedAIProvider = 'GEMINI';
 
-    if (settings?.aiProvider) {
+    // REGRA DE PROTEÇÃO CRÍTICA DO TENANT YESHUA:
+    // DeepSeek é TERMINANTEMENTE PROIBIDO para o tenant Yeshua.
+    // Yeshua opera exclusivamente com GEMINI.
+    if (isYeshuaTenant) {
+      if (settings?.aiProvider && settings.aiProvider.trim().toUpperCase() === 'DEEPSEEK') {
+        throw new Error(
+          `[AI_PROVIDER_ERROR] O provedor DEEPSEEK é terminantemente proibido para o tenant Yeshua "${org.name}". ` +
+          `A vertical Yeshua opera exclusivamente com GEMINI. Configuração rejeitada por política de conformidade.`
+        );
+      }
+      targetProvider = 'GEMINI';
+    } else if (settings?.aiProvider) {
       const normalized = settings.aiProvider.trim().toUpperCase();
       if (normalized === 'DEEPSEEK') {
         targetProvider = 'DEEPSEEK';
@@ -66,11 +72,6 @@ export class AIProviderFactory {
           `Provedores válidos são: GEMINI, DEEPSEEK.`
         );
       }
-    }
-
-    // Salvaguarda: No tenant Yeshua, se não houver configuração explícita de DEEPSEEK, garante GEMINI
-    if (isYeshuaTenant && targetProvider !== 'DEEPSEEK') {
-      targetProvider = 'GEMINI';
     }
 
     // ==========================================

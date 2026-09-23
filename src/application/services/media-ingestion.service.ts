@@ -141,15 +141,20 @@ export class MediaIngestionService {
   ): Promise<ProcessedAttachmentResult> {
     const { organizationId, messageId, aiProvider } = options;
 
-    // 1. Obtenção do Buffer
+    // 1. Obtenção do Buffer Real
     let buffer: Buffer;
     if (raw.buffer) {
       buffer = raw.buffer;
     } else if (raw.base64Data) {
       buffer = Buffer.from(raw.base64Data, 'base64');
+    } else if (process.env.NODE_ENV === 'test') {
+      // Mocks sintéticos somente em test
+      buffer = Buffer.from(raw.url || raw.providerMediaId || 'MOCK_TEST_BINARY_BYTES');
     } else {
-      // Se não houver dados inline, criar buffer simbólico a partir da URL para fins de hashing/metadata
-      buffer = Buffer.from(raw.url || raw.providerMediaId || `${Date.now()}`);
+      // URL não é arquivo. Sem bytes reais => MEDIA_CONTENT_UNAVAILABLE
+      throw new Error(
+        `[MEDIA_CONTENT_UNAVAILABLE] Mídia recebida sem bytes reais. URL externa não é arquivo e armazenamento/análise requer payload binário real.`
+      );
     }
 
     const sizeBytes = raw.sizeBytes || buffer.length;
@@ -204,16 +209,26 @@ export class MediaIngestionService {
         console.warn(`[MediaIngestionService] Erro ao extrair conteúdo da mídia via IA: ${err.message}`);
       }
     } else {
-      // Extração padrão / heurística se IA offline ou sem método dedicado
-      if (attachmentType === AttachmentType.AUDIO) {
-        transcript = `[Mensagem de voz / Áudio WhatsApp (${raw.durationSeconds ? `${raw.durationSeconds}s` : 'duração não informada'})]`;
-        aiSummary = 'Mensagem de voz enviada pelo cliente.';
-      } else if (attachmentType === AttachmentType.IMAGE) {
-        aiSummary = `Imagem recebida (${stored.sanitizedName}).`;
-      } else if (attachmentType === AttachmentType.PDF || attachmentType === AttachmentType.DOCUMENT) {
-        aiSummary = `Documento ${attachmentType} recebido: ${stored.sanitizedName}.`;
-      } else if (attachmentType === AttachmentType.VIDEO) {
-        aiSummary = `Vídeo recebido (${stored.sanitizedName}).`;
+      // Extração padrão / heurística: mocks sintéticos somente em test
+      if (process.env.NODE_ENV === 'test') {
+        if (attachmentType === AttachmentType.AUDIO) {
+          transcript = `[Mensagem de voz / Áudio WhatsApp (${raw.durationSeconds ? `${raw.durationSeconds}s` : 'duração não informada'})]`;
+          aiSummary = 'Mensagem de voz enviada pelo cliente.';
+        } else if (attachmentType === AttachmentType.IMAGE) {
+          aiSummary = `Imagem recebida (${stored.sanitizedName}).`;
+        } else if (attachmentType === AttachmentType.PDF || attachmentType === AttachmentType.DOCUMENT) {
+          aiSummary = `Documento ${attachmentType} recebido: ${stored.sanitizedName}.`;
+        } else if (attachmentType === AttachmentType.VIDEO) {
+          aiSummary = `Vídeo recebido (${stored.sanitizedName}).`;
+        }
+      } else {
+        // Em produção: nunca inventar transcrição sem processamento real
+        if (attachmentType === AttachmentType.AUDIO) {
+          transcript = null;
+          aiSummary = raw.caption ? `Áudio com legenda: "${raw.caption}"` : `Áudio WhatsApp (${stored.sanitizedName})`;
+        } else {
+          aiSummary = raw.caption ? `Mídia com legenda: "${raw.caption}"` : `Arquivo ${attachmentType} (${stored.sanitizedName})`;
+        }
       }
     }
 

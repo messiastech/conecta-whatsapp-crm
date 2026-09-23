@@ -483,35 +483,47 @@ Retorne rigorosamente um JSON:
     let summary = attachment.aiSummary || '';
     const factsExtracted: Record<string, any> = {};
 
-    if (attachment.type === 'AUDIO') {
-      extractedText = attachment.transcript || attachment.caption || 'Olá, gostaria de saber informações sobre os serviços de contabilidade e abertura de igreja.';
-      summary = 'Áudio do cliente solicitando orientações gerais.';
-      factsExtracted.canalPreferencia = 'AUDIO';
-    } else if (attachment.type === 'IMAGE') {
-      if (isFiscalRisk) {
-        extractedText = 'NOTIFICAÇÃO FISCAL Nº 2026/08912 - RECEITA FEDERAL DO BRASIL. Prazo para manifestação: 15 dias.';
-        summary = 'Print de Notificação Fiscal da Receita Federal com prazo urgente.';
-        factsExtracted.notificacaoFiscal = true;
-        factsExtracted.orgaoFiscal = 'Receita Federal';
-      } else {
-        extractedText = attachment.caption || 'Comprovante de pagamento DAS Simples Nacional no valor de R$ 75,00.';
-        summary = 'Comprovante de pagamento recebido.';
-        factsExtracted.comprovanteRecebido = true;
+    // Extração / Mocks sintéticos somente em ambiente de teste
+    if (process.env.NODE_ENV === 'test') {
+      if (attachment.type === 'AUDIO') {
+        extractedText = attachment.transcript || attachment.caption || 'Olá, gostaria de saber informações sobre os serviços de contabilidade e abertura de igreja.';
+        summary = 'Áudio do cliente solicitando orientações gerais.';
+        factsExtracted.canalPreferencia = 'AUDIO';
+      } else if (attachment.type === 'IMAGE') {
+        if (isFiscalRisk) {
+          extractedText = 'NOTIFICAÇÃO FISCAL Nº 2026/08912 - RECEITA FEDERAL DO BRASIL. Prazo para manifestação: 15 dias.';
+          summary = 'Print de Notificação Fiscal da Receita Federal com prazo urgente.';
+          factsExtracted.notificacaoFiscal = true;
+          factsExtracted.orgaoFiscal = 'Receita Federal';
+        } else {
+          extractedText = attachment.caption || 'Comprovante de pagamento DAS Simples Nacional no valor de R$ 75,00.';
+          summary = 'Comprovante de pagamento recebido.';
+          factsExtracted.comprovanteRecebido = true;
+        }
+      } else if (attachment.type === 'PDF' || attachment.type === 'DOCUMENT') {
+        if (isFiscalRisk) {
+          extractedText = 'AUTO DE INFRAÇÃO E INTIMAÇÃO FISCAL - SEFAZ. Multa pecuniária aplicada sob pena de inscrição em dívida ativa.';
+          summary = 'Documento oficial de Intimação Fiscal / Auto de Infração.';
+          factsExtracted.autoInfracao = true;
+          factsExtracted.urgenciaFiscal = true;
+        } else {
+          extractedText = attachment.caption || 'Estatuto Social consolidado e ata de eleição da diretoria com mandato até 2027.';
+          summary = 'Estatuto Social e ata eclesiástica.';
+          factsExtracted.documentosCadastraisRecebidos = true;
+        }
+      } else if (attachment.type === 'VIDEO') {
+        extractedText = attachment.caption || 'Demonstração em vídeo da tela de erro ao tentar acessar o portal da Receita Federal.';
+        summary = 'Vídeo curto exibindo mensagem de erro no navegador.';
       }
-    } else if (attachment.type === 'PDF' || attachment.type === 'DOCUMENT') {
+    } else {
+      // Produção: NUNCA inventar conteúdo ou transcrição fictícia
+      extractedText = attachment.caption || '';
+      summary = attachment.caption
+        ? `Mídia com legenda: "${attachment.caption}"`
+        : `Arquivo ${attachment.type} recebido (${attachment.fileName || ''}). Sem transcrição automática.`;
       if (isFiscalRisk) {
-        extractedText = 'AUTO DE INFRAÇÃO E INTIMAÇÃO FISCAL - SEFAZ. Multa pecuniária aplicada sob pena de inscrição em dívida ativa.';
-        summary = 'Documento oficial de Intimação Fiscal / Auto de Infração.';
-        factsExtracted.autoInfracao = true;
-        factsExtracted.urgenciaFiscal = true;
-      } else {
-        extractedText = attachment.caption || 'Estatuto Social consolidado e ata de eleição da diretoria com mandato até 2027.';
-        summary = 'Estatuto Social e ata eclesiástica.';
-        factsExtracted.documentosCadastraisRecebidos = true;
+        factsExtracted.alertaFiscal = true;
       }
-    } else if (attachment.type === 'VIDEO') {
-      extractedText = attachment.caption || 'Demonstração em vídeo da tela de erro ao tentar acessar o portal da Receita Federal.';
-      summary = 'Vídeo curto exibindo mensagem de erro no navegador.';
     }
 
     return {
