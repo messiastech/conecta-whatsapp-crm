@@ -170,8 +170,13 @@ export const App: React.FC = () => {
     );
   }
 
-  // Not logged in -> Show Auth View
-  if (!user) {
+  // Not logged in or accessing dedicated auth route -> Show Auth View
+  const isAuthRoute =
+    typeof window !== 'undefined' &&
+    (window.location.pathname === '/forgot-password' ||
+      window.location.pathname.startsWith('/reset-password'));
+
+  if (!user || isAuthRoute) {
     return <LoginView onAuthSuccess={handleAuthSuccess} />;
   }
 

@@ -50,17 +50,28 @@ export const api = {
   async getPublicConfig(): Promise<{
     verticalProfile?: string;
     allowPublicSignup?: boolean;
+    recoveryEnabled?: boolean;
+    passwordResetEnabled?: boolean;
     brandName?: string;
     brandSubtitle?: string;
     demoUserEmail?: string;
   }> {
     try {
       const res = await apiFetch(`${API_BASE}/public-config`);
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          ...data,
+          recoveryEnabled: Boolean(data.recoveryEnabled ?? data.passwordResetEnabled),
+          passwordResetEnabled: Boolean(data.recoveryEnabled ?? data.passwordResetEnabled)
+        };
+      }
     } catch {}
     return {
       verticalProfile: 'DEFAULT',
       allowPublicSignup: true,
+      recoveryEnabled: false,
+      passwordResetEnabled: false,
       brandName: 'Conecta CRM',
       brandSubtitle: 'SaaS Multi-Tenant & IA'
     };
@@ -89,6 +100,32 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || 'Falha ao criar conta');
+    }
+    return res.json();
+  },
+
+  async requestPasswordReset(email: string, redirectTo?: string): Promise<{ status: boolean; message: string }> {
+    const res = await apiFetch(`${API_BASE}/auth/request-password-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao solicitar recuperação de senha');
+    }
+    return res.json();
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ status: boolean }> {
+    const res = await apiFetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao redefinir senha');
     }
     return res.json();
   },

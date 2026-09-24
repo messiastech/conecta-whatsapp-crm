@@ -52,9 +52,15 @@ export function createApiRouter(
     const vertical = process.env.VERTICAL_PROFILE || 'DEFAULT';
     const isAccounting = vertical === 'ACCOUNTING';
     const allowPublicSignup = process.env.ALLOW_PUBLIC_SIGNUP !== 'false';
+    const hasResendApiKey = Boolean(process.env.RESEND_API_KEY?.trim());
+    const hasAuthEmailFrom = Boolean(process.env.AUTH_EMAIL_FROM?.trim());
+    const isNotExplicitlyDisabled = process.env.ENABLE_PASSWORD_RESET !== 'false';
+    const recoveryEnabled = hasResendApiKey && hasAuthEmailFrom && isNotExplicitlyDisabled;
+
     res.json({
       verticalProfile: vertical,
       allowPublicSignup,
+      recoveryEnabled,
       brandName: process.env.BRAND_NAME || (isAccounting ? 'YESHUA DESK IGREJAS' : 'Conecta CRM'),
       brandSubtitle: process.env.BRAND_SUBTITLE || (isAccounting ? 'Contabilidade Especializada para Igrejas e Terceiro Setor' : 'SaaS Multi-Tenant & IA'),
       demoUserEmail: isAccounting ? (process.env.YESHUA_ADMIN_EMAIL || process.env.YESHUA_DEMO_EMAIL || 'admin@yeshuacontabilidade.com.br') : undefined
